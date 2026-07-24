@@ -566,7 +566,10 @@ export default function App() {
     <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto', height: '100vh', display: 'flex', flexDirection: 'column', gap: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Text type="display-1" as="h1">Listner</Text>
-        <Button variant="secondary" size="sm" label="Sign Out" onClick={() => signOut(auth)} />
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <Button variant="secondary" size="sm" label="Feedback" onClick={() => window.open('https://docs.google.com/forms/d/e/1FAIpQLScV1WxsQ6FsdMC_JKmiB7xgjLK15FU-KrI3WS_W-yQTDTbUPQ/viewform?usp=publish-editor', '_blank')} />
+          <Button variant="secondary" size="sm" label="Sign Out" onClick={() => signOut(auth)} />
+        </div>
       </div>
       
       <SegmentedControl value={view} onChange={setView} label="View mode" layout="fill">
