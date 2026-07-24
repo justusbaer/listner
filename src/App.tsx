@@ -129,7 +129,9 @@ function DiaryTemplate({ content }: { content: any }) {
         <div key={i} style={{ display: 'flex', gap: '16px', position: 'relative' }}>
           <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', alignSelf: 'flex-start', marginTop: '6px', zIndex: 1, marginLeft: '11px' }} />
           <Card style={{ padding: '16px', flex: 1 }}>
-            <Text type="label" color="secondary" style={{ marginBottom: '8px', display: 'block' }}>{entry.date}</Text>
+            <Text type="label" color="secondary" style={{ marginBottom: '8px', display: 'block' }}>
+              {entry.date}{entry.location ? ` • ${entry.location}` : ''}
+            </Text>
             <Text type="body">{entry.text}</Text>
           </Card>
         </div>
@@ -196,7 +198,7 @@ function BrainstormTemplate({ content }: { content: any }) {
 
 function ProjectDetailScreen({ project, onBack }: { project: any, onBack: () => void }) {
   const [sourceNotes, setSourceNotes] = useState<any[]>([]);
-  const [chatLog, setChatLog] = useState<{role: string, text: string}[]>([]);
+  const [chatLog, setChatLog] = useState<{role: string, text: string, quickActions?: string[]}[]>([]);
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -242,9 +244,10 @@ function ProjectDetailScreen({ project, onBack }: { project: any, onBack: () => 
 
     chatSession.current = model.startChat({
       history: [
-        { role: 'user', parts: [{ text: `We are discussing a project titled "${project.title}". The current draft is:\n${project.draft}` }] },
-        { role: 'model', parts: [{ text: 'Understood. How can I help refine this project?' }] }
-      ]
+        { role: 'user', parts: [{ text: `We are discussing a project titled "${project.title}". Archetype: ${project.archetype}. Current content: ${JSON.stringify(project.content || project.draft)}\n\nInstructions: For every message, output ONLY a JSON object. If the user input is a simple addition to the project, set action="update_content" and provide the "updatedContent" (matching the archetype schema). If the input needs a response, advice, or follow-up, set action="expert_proposal", provide "expertText", and optionally "quickActions" like ["Yes", "No"].\n\nSchema:\n{"action": "update_content" | "expert_proposal", "updatedContent": {}, "expertText": "...", "quickActions": []}\nNote: for Diary entries, make sure the "date" field includes the current time, and extract a "location" if mentioned.` }] },
+        { role: 'model', parts: [{ text: '{"action":"expert_proposal","expertText":"Understood. How can I help refine this project?"}' }] }
+      ],
+      generationConfig: { responseMimeType: "application/json" }
     });
     setChatLog([{ role: 'model', text: 'Understood. How can I help refine this project?' }]);
   }, [project]);
@@ -257,16 +260,21 @@ function ProjectDetailScreen({ project, onBack }: { project: any, onBack: () => 
 
     try {
       const result = await chatSession.current.sendMessage(msgText);
-      const replyText = result.response.text();
-      setChatLog(prev => [...prev, { role: 'model', text: replyText }]);
+      const replyJson = JSON.parse(result.response.text());
       
-      // Text-to-Speech playback
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(replyText);
-        window.speechSynthesis.speak(utterance);
+      if (replyJson.action === 'update_content') {
+        await updateDoc(doc(db, 'projects', project.id), { content: replyJson.updatedContent });
+        setChatLog(prev => [...prev, { role: 'model', text: 'Project updated successfully.' }]);
+      } else {
+        setChatLog(prev => [...prev, { role: 'model', text: replyJson.expertText, quickActions: replyJson.quickActions }]);
+        if ('speechSynthesis' in window && replyJson.expertText) {
+          const utterance = new SpeechSynthesisUtterance(replyJson.expertText);
+          window.speechSynthesis.speak(utterance);
+        }
       }
     } catch (e) {
       console.error(e);
+      setChatLog(prev => [...prev, { role: 'model', text: 'Error processing response.' }]);
     }
     setIsSending(false);
   };
@@ -336,6 +344,22 @@ function ProjectDetailScreen({ project, onBack }: { project: any, onBack: () => 
       const transcribedText = transcriptionResult.response.text().trim();
       
       if (transcribedText) {
+        // Save as source note
+        const locationString = await getLocationString();
+        const noteRef = await addDoc(collection(db, 'notes'), {
+          text: transcribedText,
+          category: 'Voice Note',
+          createdAt: serverTimestamp(),
+          uid: auth.currentUser?.uid,
+          projectId: project.id,
+          locationString: locationString || null
+        });
+        
+        const newSourceNoteIds = [...(project.sourceNoteIds || []), noteRef.id];
+        await updateDoc(doc(db, 'projects', project.id), { sourceNoteIds: newSourceNoteIds });
+        
+        setSourceNotes(prev => [...prev, { id: noteRef.id, text: transcribedText, category: 'Voice Note', createdAt: { toDate: () => new Date() }, locationString }]);
+
         await sendTextMessage(transcribedText);
       }
     } catch (e) {
@@ -417,9 +441,22 @@ function ProjectDetailScreen({ project, onBack }: { project: any, onBack: () => 
               <Text type="label" color="secondary" style={{ marginBottom: '4px' }}>
                 {c.role === 'user' ? 'You' : 'Project Expert'}
               </Text>
-              <Card style={{ padding: '12px', backgroundColor: c.role === 'user' ? 'var(--color-primary)' : 'var(--color-bg-elevated)', maxWidth: '85%' }}>
+              <div style={{ 
+                padding: '12px', 
+                backgroundColor: c.role === 'user' ? 'var(--color-primary)' : 'var(--color-bg-elevated)', 
+                borderRadius: '12px',
+                border: c.role === 'user' ? 'none' : '1px solid var(--color-border-subtle)',
+                maxWidth: '85%' 
+              }}>
                 <Text type="body" style={{ color: c.role === 'user' ? 'white' : 'inherit' }}>{c.text}</Text>
-              </Card>
+              </div>
+              {c.quickActions && c.quickActions.length > 0 && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                  {c.quickActions.map((qa, j) => (
+                    <Button key={j} variant="secondary" size="sm" label={qa} onClick={() => sendTextMessage(qa)} isDisabled={isSending} />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
