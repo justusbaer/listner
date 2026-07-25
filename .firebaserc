@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "listner-mvp-justus"
-  }
+    "default": "listner-mvp-justus",
+    "testing": "listner-testing-justus"
+  },
+  "targets": {},
+  "etags": {}
 }

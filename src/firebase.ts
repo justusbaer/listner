@@ -1,19 +1,21 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
 const firebaseConfig = {
-  version: "2",
-  projectNumber: "883304829240",
-  projectId: "listner-mvp-justus",
-  appId: "1:883304829240:web:47f15d130932b89ee6b1cd",
-  storageBucket: "listner-mvp-justus.firebasestorage.app",
-  apiKey: "AIzaSyCWnFo5_xytHkllkPRmWufIbbYCAdhHn3w",
-  authDomain: "listner-mvp-justus.firebaseapp.com",
-  messagingSenderId: "883304829240"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true
+});
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+import { getFunctions } from "firebase/functions";
+export const functions = getFunctions(app);

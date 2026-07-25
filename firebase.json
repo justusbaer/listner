@@ -31,8 +31,9 @@
   "functions": {
     "source": "functions",
     "ignore": [
-      "node_modules",
-      ".git",
+      "**/node_modules/**",
+      "**/.git/**",
+      "src/**",
       "firebase-debug.log",
       "firebase-debug.*.log",
       "*.local"

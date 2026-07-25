@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:testing": "tsc -b && vite build --mode testing",
+    "deploy:mvp": "npm run build && npx firebase-tools use default && npx firebase-tools deploy",
+    "deploy:testing": "npm run build:testing && npx firebase-tools use testing && npx firebase-tools deploy",
     "lint": "oxlint",
     "preview": "vite preview"
   },
