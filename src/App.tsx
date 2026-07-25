@@ -99,19 +99,6 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
     }
   };
 
-  const handleDeleteActiveProject = async (p: any, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm(`Are you sure you want to delete "${p.title}"? Your original voice recordings will remain safely stored in Memory.`)) return;
-    try {
-      if (p.sourceNoteIds && Array.isArray(p.sourceNoteIds)) {
-        await Promise.all(p.sourceNoteIds.map((id: string) => updateDoc(doc(db, 'notes', id), { projectId: null })));
-      }
-      await deleteDoc(doc(db, 'projects', p.id));
-    } catch (err: any) {
-      alert("Error deleting project: " + err.message);
-    }
-  };
-
   return (
     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -204,32 +191,57 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
             </Text>
           </Center>
         ) : (
-          activeProjects.map(p => (
-            <Card key={p.id} style={{ padding: '16px', cursor: 'pointer', borderLeft: '4px solid var(--color-primary)' }} onClick={() => onSelectProject(p)}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text type="label" color="secondary" style={{ textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em' }}>Active Project</Text>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    label="Delete" 
-                    onClick={(e: any) => { e.stopPropagation(); handleDeleteActiveProject(p, e); }} 
-                    style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem', padding: '4px 8px', height: 'auto' }}
-                  />
+          activeProjects.map(p => {
+            let dateStr = '';
+            const timestamp = p.updatedAt || p.createdAt;
+            if (timestamp?.toDate) {
+              dateStr = timestamp.toDate().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+            } else if (timestamp && !isNaN(new Date(timestamp).getTime())) {
+              dateStr = new Date(timestamp).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+            }
+            const noteCount = p.sourceNoteIds?.length || 0;
+            const countStr = noteCount === 1 ? '1 Note' : `${noteCount} Notes`;
+            const metaStr = [countStr, dateStr].filter(Boolean).join(' · ');
+
+            return (
+              <Card 
+                key={p.id} 
+                style={{ 
+                  padding: '22px', 
+                  cursor: 'pointer', 
+                  backgroundColor: 'var(--color-bg-elevated)', 
+                  border: '1px solid var(--color-border-subtle)', 
+                  borderRadius: '16px',
+                  transition: 'transform 0.2s ease, box-shadow 0.2s ease' 
+                }} 
+                onClick={() => onSelectProject(p)}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    {p.archetype ? (
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '4px 12px', borderRadius: '14px', backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-subtle)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        {p.archetype}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Project
+                      </span>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-secondary)', fontSize: '0.8rem', fontWeight: 500 }}>
+                      <span>{metaStr}</span>
+                      <span style={{ fontSize: '1rem', color: 'var(--color-text-primary)' }}>→</span>
+                    </div>
+                  </div>
+                  <Text type="body" style={{ fontWeight: 700, fontSize: '1.25rem', color: 'var(--color-text-primary)', lineHeight: 1.3, letterSpacing: '-0.01em' }}>
+                    {p.title}
+                  </Text>
+                  <Text type="body" style={{ fontSize: '0.95rem', color: 'var(--color-text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {p.summary || p.shortSummary || p.draft}
+                  </Text>
                 </div>
-                <Text type="body" style={{ fontWeight: 'bold', fontSize: '1.2rem' }}>{p.title}</Text>
-                {p.archetype && (
-                  <span style={{ alignSelf: 'flex-start', fontSize: '12px', padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}>
-                    {p.archetype}
-                  </span>
-                )}
-                {p.reasoning && <Text type="supporting" color="secondary" style={{ fontStyle: 'italic' }}>{p.reasoning}</Text>}
-                <Text type="body" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {p.summary || p.shortSummary || p.draft}
-                </Text>
-              </div>
-            </Card>
-          ))
+              </Card>
+            );
+          })
         )}
       </div>
     </div>
