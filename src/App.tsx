@@ -252,152 +252,78 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
 // Archetype UI Templates
 // -----------------------------------------------------------------------------
 
-function SummaryCard({ summary, nextSteps, metaAnalysis, project, sourceNotes }: { summary?: string, nextSteps?: string[], metaAnalysis?: any, project?: any, sourceNotes?: any[] }) {
-  if (!summary && (!nextSteps || nextSteps.length === 0) && !metaAnalysis && !project?.createdAt) return null;
-  
-  const timespan = metaAnalysis?.timespan;
-  const placesVisited = metaAnalysis?.placesVisited;
+function SummaryCard({ summary, nextSteps, metaAnalysis }: { summary?: string, nextSteps?: string[], metaAnalysis?: any, project?: any, sourceNotes?: any[] }) {
   const keyTakeaways = metaAnalysis?.keyTakeaways;
   const interestingOpportunities = metaAnalysis?.interestingOpportunities;
+  const totalInsights = (keyTakeaways?.length || 0) + (interestingOpportunities?.length || 0) + (nextSteps?.length || 0);
 
-  let dateRangeStr = '';
-  if (sourceNotes && sourceNotes.length > 0) {
-    const dates = sourceNotes
-      .map(n => n.createdAt?.toDate ? n.createdAt.toDate() : (n.createdAt ? new Date(n.createdAt) : null))
-      .filter((d): d is Date => d !== null && !isNaN(d.getTime()))
-      .sort((a, b) => a.getTime() - b.getTime());
-    if (dates.length === 1) {
-      const d = dates[0];
-      dateRangeStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' · ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    } else if (dates.length > 1) {
-      const d1 = dates[0];
-      const d2 = dates[dates.length - 1];
-      const date1 = d1.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
-      const time1 = d1.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-      const date2 = d2.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
-      const time2 = d2.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-      if (date1 === date2) {
-        dateRangeStr = `${date1} · ${time1} – ${time2}`;
-      } else {
-        dateRangeStr = `${date1} (${time1}) – ${date2} (${time2})`;
-      }
-    }
-  }
-  if (!dateRangeStr && project?.createdAt?.toDate) {
-    const d = project.createdAt.toDate();
-    dateRangeStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' · ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  }
+  if (!summary && totalInsights === 0) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '8px' }}>
       {summary && (
-        <Card style={{ padding: '24px', backgroundColor: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)', borderRadius: '12px' }}>
-          <Text type="label" color="secondary" style={{ marginBottom: '8px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem', fontWeight: 600 }}>Executive Summary</Text>
-          <Text type="body" style={{ fontSize: '1.05rem', lineHeight: 1.6, color: 'var(--color-text-primary)', display: 'block' }}>{summary}</Text>
+        <Card style={{ padding: '24px', backgroundColor: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)', borderRadius: '16px' }}>
+          <Text type="label" color="secondary" style={{ marginBottom: '10px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem', fontWeight: 600 }}>Executive Summary</Text>
+          <Text type="body" style={{ fontSize: '1.08rem', lineHeight: 1.65, color: 'var(--color-text-primary)', display: 'block', fontWeight: 400 }}>{summary}</Text>
         </Card>
       )}
 
-      {(timespan || dateRangeStr || (placesVisited && placesVisited.length > 0)) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-          {(timespan || dateRangeStr) && (
-            <Card style={{ padding: '20px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: '12px', border: '1px solid var(--color-border-subtle)' }}>
-              <Text type="label" color="secondary" style={{ marginBottom: '8px', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', display: 'block', fontWeight: 600 }}>
-                Timespan & Scope
-              </Text>
-              {timespan && <Text type="body" style={{ fontWeight: 500, fontSize: '0.95rem', color: 'var(--color-text-primary)', display: 'block', marginBottom: dateRangeStr ? '10px' : '0' }}>{timespan}</Text>}
-              {dateRangeStr && (
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '6px', backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', fontSize: '0.82rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                  <span>{dateRangeStr}</span>
-                </div>
-              )}
-            </Card>
-          )}
-          {placesVisited && placesVisited.length > 0 && (
-            <Card style={{ padding: '20px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: '12px', border: '1px solid var(--color-border-subtle)' }}>
-              <Text type="label" color="secondary" style={{ marginBottom: '10px', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', display: 'block', fontWeight: 600 }}>
-                Places & Settings
-              </Text>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {placesVisited.map((place: string, idx: number) => (
-                  <a
-                    key={idx}
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: '5px 12px',
-                      borderRadius: '16px',
-                      backgroundColor: 'var(--color-bg-subtle)',
-                      border: '1px solid var(--color-border-subtle)',
-                      fontSize: '0.85rem',
-                      color: 'var(--color-text-primary)',
-                      fontWeight: 500,
-                      textDecoration: 'none',
-                      transition: 'all 0.2s ease',
-                      cursor: 'pointer'
-                    }}
-                    title={`Open "${place}" in Google Maps`}
-                  >
-                    <span>{place}</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginLeft: '2px' }}>↗</span>
-                  </a>
-                ))}
+      {totalInsights > 0 && (
+        <details style={{ backgroundColor: 'var(--color-bg-subtle)', borderRadius: '16px', border: '1px solid var(--color-border-subtle)', overflow: 'hidden' }}>
+          <summary style={{ padding: '16px 20px', cursor: 'pointer', fontWeight: 600, color: 'var(--color-text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.95rem', listStyle: 'none', outline: 'none', userSelect: 'none' }}>
+            <span>Strategic RAG Insights & Action Items ({totalInsights})</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Takeaways, Opportunities & Steps ▾</span>
+          </summary>
+          <div style={{ padding: '0 20px 22px 20px', display: 'flex', flexDirection: 'column', gap: '24px', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '20px' }}>
+            {keyTakeaways && keyTakeaways.length > 0 && (
+              <div>
+                <Text type="label" color="secondary" style={{ marginBottom: '10px', display: 'block', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', fontWeight: 600 }}>
+                  Key Takeaways So Far
+                </Text>
+                <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '10px', color: 'var(--color-text-primary)' }}>
+                  {keyTakeaways.map((takeaway: string, idx: number) => (
+                    <li key={idx}><Text type="body" style={{ lineHeight: 1.55, display: 'block', fontSize: '0.98rem' }}>{takeaway}</Text></li>
+                  ))}
+                </ul>
               </div>
-            </Card>
-          )}
-        </div>
-      )}
-
-      {keyTakeaways && keyTakeaways.length > 0 && (
-        <Card style={{ padding: '24px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: '12px', border: '1px solid var(--color-border-subtle)' }}>
-          <Text type="label" color="secondary" style={{ marginBottom: '12px', display: 'block', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', fontWeight: 600 }}>
-            Key Takeaways So Far
-          </Text>
-          <ul style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', color: 'var(--color-text-primary)' }}>
-            {keyTakeaways.map((takeaway: string, idx: number) => (
-              <li key={idx}><Text type="body" style={{ lineHeight: 1.5, display: 'block' }}>{takeaway}</Text></li>
-            ))}
-          </ul>
-        </Card>
-      )}
-
-      {interestingOpportunities && interestingOpportunities.length > 0 && (
-        <Card style={{ padding: '24px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: '12px', border: '1px solid var(--color-border-subtle)' }}>
-          <Text type="label" color="secondary" style={{ marginBottom: '12px', display: 'block', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', fontWeight: 600 }}>
-            Interesting Opportunities & Suggestions
-          </Text>
-          <ul style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', color: 'var(--color-text-primary)' }}>
-            {interestingOpportunities.map((opp: string, idx: number) => (
-              <li key={idx}><Text type="body" style={{ lineHeight: 1.5, display: 'block' }}>{opp}</Text></li>
-            ))}
-          </ul>
-        </Card>
-      )}
-
-      {nextSteps && nextSteps.length > 0 && (
-        <Card style={{ padding: '24px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: '12px', border: '1px solid var(--color-border-subtle)' }}>
-          <Text type="label" color="secondary" style={{ marginBottom: '12px', display: 'block', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', fontWeight: 600 }}>
-            Actionable Next Steps
-          </Text>
-          <ul style={{ margin: 0, paddingLeft: '20px', color: 'var(--color-text-primary)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {nextSteps.map((step, i) => (
-              <li key={i}><Text type="body" style={{ lineHeight: 1.5, display: 'block' }}>{step}</Text></li>
-            ))}
-          </ul>
-        </Card>
+            )}
+            {interestingOpportunities && interestingOpportunities.length > 0 && (
+              <div style={{ borderTop: keyTakeaways?.length ? '1px solid var(--color-border-subtle)' : 'none', paddingTop: keyTakeaways?.length ? '20px' : 0 }}>
+                <Text type="label" color="secondary" style={{ marginBottom: '10px', display: 'block', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', fontWeight: 600 }}>
+                  Interesting Opportunities & Suggestions
+                </Text>
+                <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '10px', color: 'var(--color-text-primary)' }}>
+                  {interestingOpportunities.map((opp: string, idx: number) => (
+                    <li key={idx}><Text type="body" style={{ lineHeight: 1.55, display: 'block', fontSize: '0.98rem' }}>{opp}</Text></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {nextSteps && nextSteps.length > 0 && (
+              <div style={{ borderTop: (keyTakeaways?.length || interestingOpportunities?.length) ? '1px solid var(--color-border-subtle)' : 'none', paddingTop: (keyTakeaways?.length || interestingOpportunities?.length) ? '20px' : 0 }}>
+                <Text type="label" color="secondary" style={{ marginBottom: '10px', display: 'block', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', fontWeight: 600 }}>
+                  Actionable Next Steps
+                </Text>
+                <ul style={{ margin: 0, paddingLeft: '18px', color: 'var(--color-text-primary)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {nextSteps.map((step: string, i: number) => (
+                    <li key={i}><Text type="body" style={{ lineHeight: 1.55, display: 'block', fontSize: '0.98rem' }}>{step}</Text></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </details>
       )}
     </div>
   );
 }
 
-function DiaryTemplate({ content }: { content: any }) {
+function DiaryTemplate({ content, summary }: { content: any, summary?: string }) {
   if (!content) return null;
-  if (content.narrativeOverview) {
+  // Dedupe: if Executive Summary is already displayed, avoid rendering duplicate narrative overview
+  if (content.narrativeOverview && !summary) {
     return (
-      <Card style={{ padding: '24px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: '12px', border: '1px solid var(--color-border-subtle)' }}>
+      <Card style={{ padding: '24px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: '16px', border: '1px solid var(--color-border-subtle)' }}>
         <Text type="label" color="secondary" style={{ marginBottom: '10px', display: 'block', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', fontWeight: 600 }}>Story & Narrative Overview</Text>
         <Text type="body" style={{ lineHeight: 1.6, fontSize: '1.05rem', whiteSpace: 'pre-wrap', display: 'block', color: 'var(--color-text-primary)' }}>{content.narrativeOverview}</Text>
       </Card>
@@ -518,10 +444,154 @@ function ProjectDetailScreen({ project, onBack }: { project: any, onBack: () => 
     return <MeetingScreen project={project} onBack={() => setShowMeeting(false)} />;
   }
 
+  const metaAnalysis = project.metaAnalysis || project.content?.metaAnalysis;
+  const placesVisited = metaAnalysis?.placesVisited || [];
+  
+  let timespanStr = metaAnalysis?.timespan || '';
+  if (!timespanStr && sourceNotes && sourceNotes.length > 0) {
+    const dates = sourceNotes
+      .map(n => n.createdAt?.toDate ? n.createdAt.toDate() : (n.createdAt ? new Date(n.createdAt) : null))
+      .filter((d): d is Date => d !== null && !isNaN(d.getTime()))
+      .sort((a, b) => a.getTime() - b.getTime());
+    if (dates.length === 1) {
+      const d = dates[0];
+      timespanStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' · ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    } else if (dates.length > 1) {
+      const d1 = dates[0];
+      const d2 = dates[dates.length - 1];
+      const date1 = d1.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      const time1 = d1.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      const date2 = d2.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      const time2 = d2.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      if (date1 === date2) {
+        timespanStr = `${date1} · ${time1} – ${time2}`;
+      } else {
+        timespanStr = `${date1} (${time1}) – ${date2} (${time2})`;
+      }
+    }
+  }
+  if (!timespanStr && project?.createdAt?.toDate) {
+    const d = project.createdAt.toDate();
+    timespanStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' · ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <div style={{ paddingBottom: '20px', borderBottom: '1px solid var(--color-border-subtle)', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Button variant="ghost" label="Back to Inbox" onClick={onBack} size="sm" />
+      <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--color-border-subtle)', marginBottom: '24px', display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+        <Button variant="ghost" label="← Back to Inbox" onClick={onBack} size="sm" style={{ paddingLeft: 0, fontWeight: 600 }} />
+      </div>
+      
+      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px' }}>
+      {status === 'proposed' && (
+        <Card style={{ padding: '20px', backgroundColor: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)', borderRadius: '14px' }}>
+          <Text type="label" color="secondary" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', display: 'block', fontWeight: 600 }}>Project Proposal</Text>
+          <Text type="body" style={{ marginBottom: '16px', lineHeight: 1.5, display: 'block' }}>
+            The Orchestrator has proposed this project. You can accept it to keep it, discard it, or use the meeting below to adjust the scope first.
+          </Text>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <Button variant="primary" label="Accept Project" onClick={acceptProject} />
+            <Button variant="ghost" label="Discard Proposal" style={{ color: 'var(--color-text-secondary)' }} onClick={discardProject} />
+          </div>
+        </Card>
+      )}
+
+      <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '20px' }}>
+          <Text type="body" style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-text-primary)', lineHeight: 1.2, display: 'block', letterSpacing: '-0.01em' }}>
+            {project.title}
+          </Text>
+
+          {/* Compact Hero Meta-Row: Archetype, Deduplicated Timespan & Interactive Place Chips */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+            {project.archetype && (
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '5px 12px', borderRadius: '16px', backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', color: 'var(--color-text-primary)' }}>
+                {project.archetype}
+              </span>
+            )}
+            {timespanStr && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', padding: '5px 12px', borderRadius: '16px', backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', fontSize: '0.82rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                <span>{timespanStr}</span>
+              </div>
+            )}
+            {placesVisited && placesVisited.length > 0 && placesVisited.map((place: string, idx: number) => (
+              <a
+                key={idx}
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '5px 12px',
+                  borderRadius: '16px',
+                  backgroundColor: 'var(--color-bg-subtle)',
+                  border: '1px solid var(--color-border-subtle)',
+                  fontSize: '0.85rem',
+                  color: 'var(--color-text-primary)',
+                  fontWeight: 500,
+                  textDecoration: 'none',
+                  transition: 'all 0.2s ease',
+                  cursor: 'pointer'
+                }}
+                title={`Open "${place}" in Google Maps`}
+              >
+                <span>{place}</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginLeft: '2px' }}>↗</span>
+              </a>
+            ))}
+          </div>
+        </div>
+
+        {/* Promoted Primary Interaction: Consult Expert */}
+        <div style={{ marginBottom: '24px' }}>
+          <Button 
+            variant="primary" 
+            label="Consult Expert" 
+            onClick={() => setShowMeeting(true)} 
+            style={{ width: '100%', padding: '14px 20px', fontSize: '1.02rem', fontWeight: 600, borderRadius: '14px' }} 
+          />
+        </div>
+
+        {/* Universal Executive Summary & Strategic RAG Insights block */}
+        <SummaryCard summary={project.summary} nextSteps={project.nextSteps} metaAnalysis={metaAnalysis} project={project} sourceNotes={sourceNotes} />
+
+        {/* Dynamic content rendering based on archetype or legacy draft */}
+        <div style={{ marginTop: '20px' }}>
+          {project.archetype === 'Diary' && project.content ? <DiaryTemplate content={project.content} summary={project.summary} /> :
+           project.archetype === 'Chapters' && project.content ? <ChaptersTemplate content={project.content} /> :
+           project.archetype === 'Brainstorm' && project.content ? <BrainstormTemplate content={project.content} /> :
+           <Card style={{ padding: '24px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: '16px', border: '1px solid var(--color-border-subtle)' }}>
+             <Text type="body" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '1.05rem' }}>{project.draft || JSON.stringify(project.content, null, 2)}</Text>
+           </Card>
+          }
+        </div>
+      </div>
+
+      {sourceNotes.length > 0 && (
+        <details style={{ marginTop: '12px', backgroundColor: 'var(--color-bg-subtle)', borderRadius: '16px', border: '1px solid var(--color-border-subtle)', overflow: 'hidden' }}>
+          <summary style={{ padding: '16px 20px', cursor: 'pointer', fontWeight: 600, color: 'var(--color-text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.95rem', listStyle: 'none', outline: 'none', userSelect: 'none' }}>
+            <span>Source Notes & Memory Recordings ({sourceNotes.length})</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>View ▾</span>
+          </summary>
+          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid var(--color-border-subtle)' }}>
+            {sourceNotes.map(note => (
+              <Card key={note.id} style={{ padding: '16px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: '12px', border: '1px solid var(--color-border-subtle)' }}>
+                <Text type="supporting" color="secondary" style={{ textTransform: 'uppercase', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600 }}>
+                  <span>{note.category}</span>
+                  <span style={{ textTransform: 'none', fontWeight: 500 }}>
+                    {note.createdAt?.toDate ? note.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                    {note.locationString ? ` • ${note.locationString}` : ''}
+                  </span>
+                </Text>
+                <Text type="body" style={{ lineHeight: 1.55, fontSize: '0.95rem', color: 'var(--color-text-primary)' }}>{note.text}</Text>
+              </Card>
+            ))}
+          </div>
+        </details>
+      )}
+
+      <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--color-border-subtle)', display: 'flex', justifyContent: 'center' }}>
         <Button 
           variant="ghost" 
           label="Delete Project" 
@@ -537,77 +607,8 @@ function ProjectDetailScreen({ project, onBack }: { project: any, onBack: () => 
               alert("Error deleting project: " + err.message);
             }
           }} 
-          style={{ color: 'var(--color-destructive, #ff4444)', fontWeight: 500 }} 
+          style={{ color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '0.85rem' }} 
         />
-      </div>
-      
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '32px' }}>
-      {status === 'proposed' && (
-        <Card style={{ padding: '20px', backgroundColor: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)', borderRadius: '12px' }}>
-          <Text type="label" color="secondary" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', display: 'block', fontWeight: 600 }}>Project Proposal</Text>
-          <Text type="body" style={{ marginBottom: '16px', lineHeight: 1.5, display: 'block' }}>
-            The Orchestrator has proposed this project. You can accept it to keep it, discard it, or use the meeting below to adjust the scope first.
-          </Text>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <Button variant="primary" label="Accept Project" onClick={acceptProject} />
-            <Button variant="ghost" label="Discard Proposal" style={{ color: 'var(--color-text-secondary)' }} onClick={discardProject} />
-          </div>
-        </Card>
-      )}
-
-      <div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
-          {project.archetype && (
-            <div>
-              <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', padding: '4px 10px', borderRadius: '14px', backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}>
-                {project.archetype}
-              </span>
-            </div>
-          )}
-          <Text type="body" style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-text-primary)', lineHeight: 1.2, display: 'block', letterSpacing: '-0.01em' }}>
-            {project.title}
-          </Text>
-        </div>
-
-        {/* Universal Executive Summary & Meta-Analysis block */}
-        <SummaryCard summary={project.summary} nextSteps={project.nextSteps} metaAnalysis={project.metaAnalysis || project.content?.metaAnalysis} project={project} sourceNotes={sourceNotes} />
-
-        {/* Dynamic content rendering based on archetype or legacy draft */}
-        <div style={{ marginTop: '24px' }}>
-          {project.archetype === 'Diary' && project.content ? <DiaryTemplate content={project.content} /> :
-           project.archetype === 'Chapters' && project.content ? <ChaptersTemplate content={project.content} /> :
-           project.archetype === 'Brainstorm' && project.content ? <BrainstormTemplate content={project.content} /> :
-           <Card style={{ padding: '16px', backgroundColor: 'var(--color-bg-elevated)' }}>
-             <Text type="body" style={{ whiteSpace: 'pre-wrap' }}>{project.draft || JSON.stringify(project.content, null, 2)}</Text>
-           </Card>
-          }
-        </div>
-      </div>
-
-      {sourceNotes.length > 0 && (
-        <details>
-          <summary style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 'bold', marginBottom: '8px', padding: '8px 0', outline: 'none' }}>
-            View Source Notes ({sourceNotes.length})
-          </summary>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-            {sourceNotes.map(note => (
-              <Card key={note.id} style={{ padding: '12px' }}>
-                <Text type="supporting" color="secondary" style={{ textTransform: 'uppercase', marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{note.category}</span>
-                  <span style={{ textTransform: 'none' }}>
-                    {note.createdAt?.toDate ? note.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : ''}
-                    {note.locationString ? ` • ${note.locationString}` : ''}
-                  </span>
-                </Text>
-                <Text type="body">{note.text}</Text>
-              </Card>
-            ))}
-          </div>
-        </details>
-      )}
-
-      <div style={{ borderTop: '1px solid var(--color-border-subtle)', paddingTop: '24px', paddingBottom: '24px' }}>
-        <Button variant="primary" label="Consult Expert" onClick={() => setShowMeeting(true)} style={{ width: '100%' }} />
       </div>
 
       </div>
