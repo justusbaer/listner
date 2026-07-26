@@ -405,7 +405,7 @@ function BrainstormTemplate({ content }: { content: any }) {
 
 
 
-function ProjectDetailScreen({ project, onBack }: { project: any, onBack: () => void }) {
+function ProjectDetailScreen({ project, onBack, orchestratorState }: { project: any, onBack: () => void, orchestratorState: string }) {
   const [sourceNotes, setSourceNotes] = useState<any[]>([]);
   const [showMeeting, setShowMeeting] = useState(false);
   const [status, setStatus] = useState(project.status || 'accepted');
@@ -483,8 +483,9 @@ function ProjectDetailScreen({ project, onBack }: { project: any, onBack: () => 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--color-border-subtle)', marginBottom: '24px', display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+      <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--color-border-subtle)', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Button variant="ghost" label="← Back to Inbox" onClick={onBack} size="sm" style={{ paddingLeft: 0, fontWeight: 600 }} />
+        <OrchestratorStatus state={orchestratorState} />
       </div>
       
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px' }}>
@@ -885,7 +886,7 @@ function useOrchestrator(user: any) {
   const handleNoteAdded = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     
-    setOrchestratorState('idle'); // waiting
+    setOrchestratorState('waiting'); // immediately show waiting/gathering status
     
     timerRef.current = setTimeout(() => {
       runOrchestrator();
@@ -912,34 +913,47 @@ function useOrchestrator(user: any) {
     }
   };
 
-  return { orchestratorState, handleNoteAdded };
+  return { orchestratorState, setOrchestratorState, handleNoteAdded };
 }
 
 function OrchestratorStatus({ state }: { state: string }) {
-  let text = '';
-  let color = 'var(--color-text-secondary)';
-  let dotColor = 'transparent';
+  let text = 'AI is ready';
+  let color = 'var(--color-text-secondary, #6b7280)';
+  let dotClass = 'status-dot status-dot-idle';
   
   switch (state) {
+    case 'analyzing':
+      text = 'AI transcribing note...';
+      color = '#3b82f6';
+      dotClass = 'status-dot status-dot-analyzing';
+      break;
+    case 'waiting':
+      text = 'AI gathering thoughts...';
+      color = '#eab308';
+      dotClass = 'status-dot status-dot-waiting';
+      break;
     case 'processing':
       text = 'AI is thinking...';
-      color = 'var(--color-warning)';
-      dotColor = 'var(--color-warning)';
+      color = '#f59e0b';
+      dotClass = 'status-dot status-dot-processing';
       break;
     case 'completed':
       text = 'New project proposed!';
-      color = 'var(--color-success)';
-      dotColor = 'var(--color-success)';
+      color = '#22c55e';
+      dotClass = 'status-dot status-dot-completed';
       break;
     case 'idle':
     default:
-      return null; // Don't show anything when idle to avoid clutter
+      text = 'AI is ready';
+      color = 'var(--color-text-secondary, #6b7280)';
+      dotClass = 'status-dot status-dot-idle';
+      break;
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color, fontWeight: 500 }}>
-      <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: dotColor, animation: state === 'processing' ? 'pulse 1.5s infinite' : 'none' }} />
-      {text}
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', color, fontWeight: 600, padding: '5px 12px', borderRadius: '18px', backgroundColor: 'var(--color-bg-subtle, #f8fafc)', border: '1px solid var(--color-border-subtle, rgba(0,0,0,0.06))', transition: 'all 0.3s ease' }}>
+      <div className={dotClass} />
+      <span>{text}</span>
     </div>
   );
 }
@@ -950,7 +964,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
 
-  const { orchestratorState, handleNoteAdded } = useOrchestrator(user);
+  const { orchestratorState, setOrchestratorState, handleNoteAdded } = useOrchestrator(user);
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -993,14 +1007,14 @@ export default function App() {
         <SegmentedControlItem value="projects" label="Projects" />
       </SegmentedControl>
 
-      {view === 'capture' && user && <CaptureScreen user={user} onNoteAdded={handleNoteAdded} />}
+      {view === 'capture' && user && <CaptureScreen user={user} onNoteAdded={handleNoteAdded} orchestratorState={orchestratorState} setOrchestratorState={setOrchestratorState} />}
       {view === 'projects' && user && !selectedProject && <InboxScreen user={user} onSelectProject={setSelectedProject} orchestratorState={orchestratorState} />}
-      {view === 'projects' && user && selectedProject && <ProjectDetailScreen project={selectedProject} onBack={() => setSelectedProject(null)} />}
+      {view === 'projects' && user && selectedProject && <ProjectDetailScreen project={selectedProject} onBack={() => setSelectedProject(null)} orchestratorState={orchestratorState} />}
     </div>
   );
 }
 
-function CaptureScreen({ user, onNoteAdded }: { user: User, onNoteAdded: () => void }) {
+function CaptureScreen({ user, onNoteAdded, orchestratorState, setOrchestratorState }: { user: User, onNoteAdded: () => void, orchestratorState: string, setOrchestratorState: (s: string) => void }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState('Tap to record your thought');
@@ -1032,8 +1046,11 @@ function CaptureScreen({ user, onNoteAdded }: { user: User, onNoteAdded: () => v
 
         setStatus('Processing...');
         setIsProcessing(true);
+        setOrchestratorState('analyzing');
         try {
           await processAudio(audioBlob);
+        } catch {
+          setOrchestratorState('idle');
         } finally {
           setIsProcessing(false);
         }
@@ -1121,36 +1138,42 @@ Then, on a new line, provide a JSON object exactly like this:
   };
 
   return (
-    <Center style={{ flex: 1 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', alignItems: 'center' }}>
-        <Button 
-          variant={isRecording ? 'destructive' : 'primary'} 
-          size="lg"
-          label={isRecording ? 'Tap to Stop' : isProcessing ? 'Processing...' : 'Tap to Record'}
-          onClick={() => isRecording ? stopRecording() : startRecording()}
-          style={{ width: '200px', height: '200px', borderRadius: '50%', fontSize: '1.5rem' }}
-          className={isProcessing ? 'processing-pulse' : ''}
-        />
-        <Text type="body" color="secondary">{status}</Text>
-        <Button 
-          variant="ghost" 
-          size="sm"
-          label={showMemory ? 'Hide Recent Captures' : 'View Recent Captures'}
-          onClick={() => setShowMemory(!showMemory)}
-          style={{ marginTop: '24px' }}
-        />
-        
-        {showMemory && (
-          <div style={{ width: '100%', maxWidth: '600px', marginTop: '24px', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '24px' }}>
-            <MemoryScreen user={user} />
-          </div>
-        )}
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <Text type="display-2" style={{ fontWeight: "bold" }}>Capture</Text>
+        <OrchestratorStatus state={orchestratorState} />
       </div>
-    </Center>
+      <Center style={{ flex: 1 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', alignItems: 'center' }}>
+          <Button 
+            variant={isRecording ? 'destructive' : 'primary'} 
+            size="lg"
+            label={isRecording ? 'Tap to Stop' : isProcessing ? 'Processing...' : 'Tap to Record'}
+            onClick={() => isRecording ? stopRecording() : startRecording()}
+            style={{ width: '200px', height: '200px', borderRadius: '50%', fontSize: '1.5rem' }}
+            className={isProcessing ? 'processing-pulse' : ''}
+          />
+          <Text type="body" color="secondary">{status}</Text>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            label={showMemory ? 'Hide Recent Captures' : 'View Recent Captures'}
+            onClick={() => setShowMemory(!showMemory)}
+            style={{ marginTop: '24px' }}
+          />
+          
+          {showMemory && (
+            <div style={{ width: '100%', maxWidth: '600px', marginTop: '24px', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '24px' }}>
+              <MemoryScreen user={user} setOrchestratorState={setOrchestratorState} />
+            </div>
+          )}
+        </div>
+      </Center>
+    </div>
   );
 }
 
-function MemoryScreen({ user }: { user: User }) {
+function MemoryScreen({ user, setOrchestratorState }: { user: User, setOrchestratorState: (s: string) => void }) {
   const [notes, setNotes] = useState<any[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
@@ -1196,13 +1219,17 @@ function MemoryScreen({ user }: { user: User }) {
   const handleStartProject = async () => {
     if (selectedIds.size === 0) return;
     setIsProcessing(true);
+    setOrchestratorState('processing');
     try {
       const orchestrateNotesFn = httpsCallable(functions, 'orchestrateNotes');
       await orchestrateNotesFn({ action: 'manual', noteIds: Array.from(selectedIds) });
       setSelectedIds(new Set());
+      setOrchestratorState('completed');
+      setTimeout(() => setOrchestratorState('idle'), 5000);
       alert('Project proposal created successfully!');
     } catch (e) {
       console.error(e);
+      setOrchestratorState('idle');
       alert('Error creating project proposal');
     } finally {
       setIsProcessing(false);
@@ -1212,15 +1239,19 @@ function MemoryScreen({ user }: { user: User }) {
   const handleAddToExisting = async (targetProject: any) => {
     if (selectedIds.size === 0) return;
     setIsProcessing(true);
+    setOrchestratorState('processing');
     try {
       const idsArray = Array.from(selectedIds);
       const orchestrateNotesFn = httpsCallable(functions, 'orchestrateNotes');
       await orchestrateNotesFn({ action: 'append_to_existing', targetProjectId: targetProject.id, noteIds: idsArray });
       setSelectedIds(new Set());
       setShowProjectSelector(false);
+      setOrchestratorState('completed');
+      setTimeout(() => setOrchestratorState('idle'), 5000);
       alert(`Notes synthesized and added to project "${targetProject.title}"!`);
     } catch (err: any) {
       console.error(err);
+      setOrchestratorState('idle');
       alert('Error adding notes to project: ' + err.message);
     } finally {
       setIsProcessing(false);
