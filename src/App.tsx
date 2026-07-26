@@ -37,7 +37,8 @@ const refineProjectMetaIfNeeded = async (p: any) => {
   refiningProjects.add(p.id);
   try {
     let noteTexts: string[] = [];
-    const q = query(collection(db, 'notes'), where('projectId', '==', p.id));
+    const currentUid = auth.currentUser?.uid || p.uid;
+    const q = query(collection(db, 'notes'), where('uid', '==', currentUid), where('projectId', '==', p.id));
     const noteSnaps = await getDocs(q);
     noteTexts = noteSnaps.docs.map(d => d.data().text as string).filter(Boolean);
     
