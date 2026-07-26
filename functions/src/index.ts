@@ -282,6 +282,7 @@ Archetype Content Schemas for "projectDetails.content":
     } else if (parsed.action === 'propose_new' || parsed.action === 'propose') {
       const newProjectRef = await db.collection('projects').add({
         ...(parsed.projectDetails || {}),
+        sourceNoteIds: Array.isArray(targetNoteIds) && targetNoteIds.length > 0 ? targetNoteIds : (parsed.projectDetails?.sourceNoteIds || []),
         uid,
         status: 'proposed', // The Gatekeeper Model: do NOT auto-create as active/draft!
         createdAt: FieldValue.serverTimestamp()

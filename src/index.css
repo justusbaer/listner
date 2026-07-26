@@ -53,21 +53,26 @@ body {
 }
 
 .status-dot-idle {
-  background-color: #9ca3af;
+  background-color: #10b981;
+}
+
+.status-dot-analyzing {
+  background-color: #3b82f6;
+  animation: pulse 1.5s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .status-dot-waiting {
-  background-color: #ca8a04;
-  animation: pulse-warning 3s infinite cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: #eab308;
+  animation: pulse-warning 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .status-dot-processing {
-  background-color: var(--color-primary);
+  background-color: #f59e0b;
   animation: pulse 1.5s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .status-dot-completed {
-  background-color: #16a34a;
+  background-color: #22c55e;
   animation: pulse-success 1s ease-out;
 }
 

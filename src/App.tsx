@@ -67,7 +67,13 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
     try {
       await updateDoc(doc(db, 'projects', p.id), { status: 'accepted', updatedAt: serverTimestamp() });
       if (p.sourceNoteIds && Array.isArray(p.sourceNoteIds)) {
-        await Promise.all(p.sourceNoteIds.map((nid: string) => updateDoc(doc(db, 'notes', nid), { projectId: p.id })));
+        await Promise.all(p.sourceNoteIds.map(async (nid: string) => {
+          try {
+            await updateDoc(doc(db, 'notes', nid), { projectId: p.id });
+          } catch (noteErr) {
+            console.warn(`Could not bind note ${nid} (possibly deleted or missing):`, noteErr);
+          }
+        }));
       }
     } catch (err: any) {
       alert("Error creating project: " + err.message);
@@ -599,7 +605,13 @@ function ProjectDetailScreen({ project, onBack }: { project: any, onBack: () => 
             if (!confirm('Are you sure you want to delete this project? Your original voice recordings will remain safely stored in Memory.')) return;
             try {
               if (project.sourceNoteIds && Array.isArray(project.sourceNoteIds)) {
-                await Promise.all(project.sourceNoteIds.map((id: string) => updateDoc(doc(db, 'notes', id), { projectId: null })));
+                await Promise.all(project.sourceNoteIds.map(async (id: string) => {
+                  try {
+                    await updateDoc(doc(db, 'notes', id), { projectId: null });
+                  } catch (noteErr) {
+                    console.warn(`Could not unbind note ${id} during project deletion:`, noteErr);
+                  }
+                }));
               }
               await deleteDoc(doc(db, 'projects', project.id));
               onBack();
