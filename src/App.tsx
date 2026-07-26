@@ -5,7 +5,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Center } from '@astryxdesign/core/Center';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { db, app, auth, googleProvider } from './firebase';
-import { collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, where, doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, where, doc, getDoc, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
 import { signInWithPopup, onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { getAI, getGenerativeModel } from 'firebase/ai';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -16,6 +16,71 @@ const vertexAI = getAI(app);
 const model = getGenerativeModel(vertexAI, { 
   model: 'gemini-3.5-flash'
 });
+
+const refiningProjects = new Set<string>();
+
+const refineProjectMetaIfNeeded = async (p: any) => {
+  if (!p.id || refiningProjects.has(p.id) || p.status === 'proposed') return;
+  
+  const isSummaryBloated = !p.summary || p.summary.length > 120 || p.summary.split(' ').length > 18 || p.summary.includes(' – wie ') || p.summary.includes('Neben exklusiven');
+  const isLatestGeneric = !p.latestChange || p.latestChange.length > 130 || 
+    p.latestChange.startsWith('Synthesized') || 
+    p.latestChange.startsWith('Updated') || 
+    p.latestChange.startsWith('Proposed') || 
+    p.latestChange.startsWith('Manually') ||
+    p.latestChange.startsWith('Project initialized') ||
+    p.latestChange.startsWith('AI detected') ||
+    p.latestChange.startsWith('Die Notizen');
+
+  if (!isSummaryBloated && !isLatestGeneric) return;
+  
+  refiningProjects.add(p.id);
+  try {
+    let noteTexts: string[] = [];
+    const q = query(collection(db, 'notes'), where('projectId', '==', p.id));
+    const noteSnaps = await getDocs(q);
+    noteTexts = noteSnaps.docs.map(d => d.data().text as string).filter(Boolean);
+    
+    if (noteTexts.length === 0 && p.sourceNoteIds && Array.isArray(p.sourceNoteIds)) {
+      const snaps = await Promise.all(
+        p.sourceNoteIds.slice(-6).map((id: string) => getDoc(doc(db, 'notes', id)).catch(() => null))
+      );
+      noteTexts = snaps.map(s => s?.data()?.text as string).filter(Boolean);
+    }
+    
+    const contextText = noteTexts.slice(-8).join('\n- ');
+    const prompt = `Analyze this user project titled "${p.title}" (Archetype: ${p.archetype || 'Project'}) and its associated note captures:
+- ${contextText || p.summary || p.title}
+
+The current summary is too wordy/bloated, or the latest update indicator is unhelpful/generic.
+Your task is to generate TWO EXTREMELY CRISP, RAZOR-SHARP SENTENCES in the primary language of the notes (e.g. German if the notes are in German, English if English):
+
+1. "summary": EXACTLY ONE short declarative sentence summarizing the overall project topic in MAXIMUM 10 TO 12 WORDS (e.g. "Familienurlaub in Stockholm mit Städtetrip und Ferienhaus am See."). STRICT RULE: Do NOT write compound sentences, clauses, or long explanations! Keep it ultra-brief and punchy!
+2. "latestChange": EXACTLY ONE short sentence explaining what specific thought, place, or insight was MOST RECENTLY discussed or noted, so the user instantly remembers where they left off (e.g. "Zuletzt notiert: Café Panem als idealen Pausenort nach dem Museumsbesuch bewertet."). STRICT RULE: Do NOT output vague statistics like "Synthesized from X notes" or "Updated project"! Must state specific topic details from the newest captures!
+
+Return ONLY raw JSON:
+{
+  "summary": "...",
+  "latestChange": "..."
+}`;
+
+    const res = await model.generateContent([prompt]);
+    const text = res.response.text();
+    const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/) || [null, text.replace(/```json\n?|\n?```/g, '').trim()];
+    const parsed = JSON.parse(jsonMatch[1]!);
+    
+    if (parsed.summary && parsed.latestChange && parsed.summary.length <= 130) {
+      await updateDoc(doc(db, 'projects', p.id), {
+        summary: parsed.summary,
+        latestChange: parsed.latestChange
+      });
+      p.summary = parsed.summary;
+      p.latestChange = parsed.latestChange;
+    }
+  } catch (e) {
+    console.warn("Could not auto-refine project meta:", e);
+  }
+};
 
 const getLocationString = async (): Promise<string | null> => {
   return new Promise((resolve) => {
@@ -51,7 +116,9 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
   useEffect(() => {
     const q = query(collection(db, 'projects'), where('uid', '==', user.uid), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setProjects(loaded);
+      loaded.forEach(p => refineProjectMetaIfNeeded(p));
     }, (error) => {
       console.error("Firestore error:", error);
       alert("Firestore error loading projects: " + error.message);
@@ -65,7 +132,11 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
   const handleCreateProject = async (p: any, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await updateDoc(doc(db, 'projects', p.id), { status: 'accepted', updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, 'projects', p.id), { 
+        status: 'accepted', 
+        latestChange: p.latestChange || p.reasoning || 'Project proposal accepted into active collection.',
+        updatedAt: serverTimestamp() 
+      });
       if (p.sourceNoteIds && Array.isArray(p.sourceNoteIds)) {
         await Promise.all(p.sourceNoteIds.map(async (nid: string) => {
           try {
@@ -141,17 +212,24 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
                   </div>
                 </div>
 
-                {p.reasoning && (
-                  <div style={{ padding: '12px 16px', backgroundColor: 'var(--color-bg-subtle)', borderRadius: '8px', border: '1px solid var(--color-border-subtle)' }}>
-                    <Text type="supporting" style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem', fontStyle: 'italic', display: 'block' }}>
-                      "{p.reasoning}"
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>
+                      SUMMARY
+                    </span>
+                    <Text type="body" style={{ color: 'var(--color-text-primary)', fontSize: '0.95rem', lineHeight: 1.4, margin: 0 }}>
+                      {p.summary || p.shortSummary || 'AI detected a unified theme across your captures.'}
                     </Text>
                   </div>
-                )}
-
-                <Text type="body" style={{ color: 'var(--color-text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {p.summary || p.shortSummary || p.draft || 'No summary available.'}
-                </Text>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>
+                      WHERE YOU LEFT OFF
+                    </span>
+                    <Text type="body" style={{ color: 'var(--color-text-primary)', fontSize: '0.95rem', lineHeight: 1.4, margin: 0 }}>
+                      {p.latestChange || "Proposed new structure based on recent unassigned captures."}
+                    </Text>
+                  </div>
+                </div>
 
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '8px', paddingTop: '12px', borderTop: '1px solid var(--color-border-subtle)' }} onClick={e => e.stopPropagation()}>
                   <Button variant="primary" label="Create Project" onClick={(e: any) => handleCreateProject(p, e)} />
@@ -241,9 +319,24 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
                   <Text type="body" style={{ fontWeight: 700, fontSize: '1.25rem', color: 'var(--color-text-primary)', lineHeight: 1.3, letterSpacing: '-0.01em' }}>
                     {p.title}
                   </Text>
-                  <Text type="body" style={{ fontSize: '0.95rem', color: 'var(--color-text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {p.summary || p.shortSummary || p.draft}
-                  </Text>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
+                    <div>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>
+                        SUMMARY
+                      </span>
+                      <Text type="body" style={{ fontSize: '0.95rem', color: 'var(--color-text-primary)', lineHeight: 1.4, margin: 0 }}>
+                        {p.summary || p.shortSummary || p.draft || "Project active and accumulating insights."}
+                      </Text>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>
+                        WHERE YOU LEFT OFF
+                      </span>
+                      <Text type="body" style={{ fontSize: '0.95rem', color: 'var(--color-text-primary)', lineHeight: 1.4, margin: 0 }}>
+                        {p.latestChange || (noteCount === 1 ? "Project initialized from 1 voice capture." : `Synthesized from ${noteCount} recorded captures.`)}
+                      </Text>
+                    </div>
+                  </div>
                 </div>
               </Card>
             );
@@ -412,7 +505,11 @@ function ProjectDetailScreen({ project, onBack, orchestratorState }: { project: 
 
   const acceptProject = async () => {
     try {
-      await updateDoc(doc(db, 'projects', project.id), { status: 'accepted' });
+      await updateDoc(doc(db, 'projects', project.id), { 
+        status: 'accepted',
+        latestChange: project.latestChange || project.reasoning || 'Project proposal accepted into active collection.',
+        updatedAt: serverTimestamp()
+      });
       setStatus('accepted');
     } catch (e) {
       console.error(e);
@@ -742,17 +839,23 @@ function MeetingScreen({ project, onBack }: { project: any, onBack: () => void }
     setIsSending(true);
     try {
       const transcriptText = chatLog.map(c => `${c.role === 'user' ? 'User' : 'Expert'}: ${c.text}`).join('\n');
-      const prompt = `Based on the following meeting transcript, propose an updated project content for the project titled "${project.title}" (Archetype: ${project.archetype}). Current content: ${JSON.stringify(project.content || project.draft)}.
+      const prompt = `Based on the following meeting transcript, propose an updated project title (if relevant), updated content, an executive summary (EXACTLY 1 short, crisp sentence in MAXIMUM 10 to 12 words), and a description of what just changed (EXACTLY 1 short, crisp sentence specifying concrete topic details) for the project titled "${project.title}" (Archetype: ${project.archetype}). Current content: ${JSON.stringify(project.content || project.draft)}. Current summary: "${project.summary || ''}".
       
-      Return ONLY a JSON object matching the archetype schema representing the new project content. If no changes are needed, return the exact same content.
+      Return ONLY a JSON object with this exact structure:
+      {
+        "title": "An updated, concise title reflecting the current project scope (update whenever relevant based on the meeting).",
+        "content": { ...archetype content schema matching ${project.archetype}... },
+        "summary": "EXACTLY ONE short declarative sentence summarizing the overall project essence in MAXIMUM 10 TO 12 WORDS. Do NOT write bloated compound sentences!",
+        "latestChange": "EXACTLY ONE short sentence explicitly stating what specific concrete topic, decision, or insight was MOST RECENTLY discussed in this meeting so the user instantly remembers where they left off. Do NOT output vague administrative statistics!"
+      }
       
       Transcript:
       ${transcriptText}`;
       
       const result = await model.generateContent([prompt]);
       const jsonStr = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-      const updatedContent = JSON.parse(jsonStr);
-      setProposedChanges(updatedContent);
+      const parsedResult = JSON.parse(jsonStr);
+      setProposedChanges(parsedResult);
     } catch(e) {
       console.error(e);
       alert("Failed to process meeting. See console.");
@@ -783,8 +886,22 @@ function MeetingScreen({ project, onBack }: { project: any, onBack: () => void }
   const applyChanges = async () => {
     if (!proposedChanges) return;
     try {
-      await updateDoc(doc(db, 'projects', project.id), { content: proposedChanges });
-      project.content = proposedChanges; 
+      const newTitle = proposedChanges.title || project.title;
+      const newContent = proposedChanges.content || proposedChanges;
+      const newSummary = proposedChanges.summary || project.summary;
+      const newLatestChange = proposedChanges.latestChange || "Refined project details through Project Expert consultation.";
+
+      await updateDoc(doc(db, 'projects', project.id), { 
+        title: newTitle,
+        content: newContent,
+        summary: newSummary,
+        latestChange: newLatestChange,
+        updatedAt: serverTimestamp()
+      });
+      project.title = newTitle;
+      project.content = newContent; 
+      project.summary = newSummary;
+      project.latestChange = newLatestChange;
       await saveTranscriptAsNote();
       onBack(); // Return to project detail
     } catch (e) {

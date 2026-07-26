@@ -152,9 +152,10 @@ Output ONLY raw JSON (no markdown blocks) matching this schema:
   "action": "append_to_existing",
   "targetProjectId": "${targetProjectId}",
   "projectDetails": {
-    "title": "${targetProj.title}",
+    "title": "An updated, concise title reflecting the current full scope of all notes in the project (update whenever relevant).",
     "archetype": "${targetProj.archetype || 'Diary'}",
-    "summary": "An updated, overarching high-level summary synthesizing key topics across all voice notes cohesively.",
+    "summary": "EXACTLY ONE short declarative sentence summarizing the overarching project essence in MAXIMUM 10 TO 12 WORDS (e.g. 'Familienurlaub in Stockholm mit Städtetrip und Ferienhaus am See.'). STRICT RULE: Under NO circumstances write bloated compound sentences!",
+    "latestChange": "EXACTLY ONE short sentence explicitly stating what specific concrete topic, place, or insight was MOST RECENTLY added so the user instantly remembers where they left off (e.g. 'Zuletzt notiert: Café Panem als idealen Pausenort bewertet.'). STRICT RULE: Do NOT output vague statistics or generic administrative statements!",
     "metaAnalysis": {
       "timespan": "Timespan & scope WITH EXACT CALENDAR DATES and TIMESTAMPS covered by all notes (e.g., '24.07.2026 10:30 – 26.07.2026 18:00 (3 Days) · Schweden-Aufenthalt'). YOU MUST ALWAYS INCLUDE SPECIFIC DATES AND TIMESTAMPS derived from note metadata!",
       "placesVisited": ["List of distinct places, restaurants, cafes, museums, or cities visited or discussed across all notes"],
@@ -193,9 +194,10 @@ Output ONLY raw JSON (no markdown blocks) with the following schema:
   "action": "append_to_existing" | "propose_new" | "ignore",
   "targetProjectId": "Required ONLY if action is append_to_existing (must match an exact ProjectID above)",
   "projectDetails": {
-    "title": "A short, descriptive title",
+    "title": "A crisp, descriptive title reflecting the scope of all notes in the project (update equally when relevant).",
     "archetype": "Diary | Chapters | Brainstorm",
-    "summary": "An overarching, high-level summary synthesizing the core essence across ALL notes.",
+    "summary": "EXACTLY ONE short declarative sentence summarizing the overarching essence across all notes in MAXIMUM 10 TO 12 WORDS. STRICT RULE: Under NO circumstances write bloated compound sentences!",
+    "latestChange": "EXACTLY ONE short sentence explicitly stating what specific concrete topic, place, or insight was MOST RECENTLY added or why this project was formed so the user instantly remembers where they left off. STRICT RULE: Do NOT output vague statistics or generic administrative statements!",
     "metaAnalysis": {
       "timespan": "Timespan & scope WITH EXACT CALENDAR DATES and TIMESTAMPS covered by notes (e.g., '24.07.2026 14:00 – 25.07.2026 19:30 · Stockholm-Ausflug'). YOU MUST ALWAYS INCLUDE SPECIFIC DATES AND TIMESTAMPS!",
       "placesVisited": ["List of distinct locations, venues, or cities mentioned in the notes or metadata"],
@@ -263,10 +265,12 @@ Archetype Content Schemas for "projectDetails.content":
       const updatedSourceIds = Array.from(new Set([...oldSourceIds, ...targetNoteIds]));
       
       await ref.update({
+        title: newDetails.title || existingData.title || 'Untitled Project',
         content: mergedContent,
         metaAnalysis: newDetails.metaAnalysis || existingData.metaAnalysis || null,
         sourceNoteIds: updatedSourceIds,
         summary: newDetails.summary || existingData.summary || '',
+        latestChange: newDetails.latestChange || 'Updated project with new voice captures.',
         nextSteps: newDetails.nextSteps || existingData.nextSteps || [],
         updatedAt: FieldValue.serverTimestamp()
       });
@@ -282,6 +286,7 @@ Archetype Content Schemas for "projectDetails.content":
     } else if (parsed.action === 'propose_new' || parsed.action === 'propose') {
       const newProjectRef = await db.collection('projects').add({
         ...(parsed.projectDetails || {}),
+        latestChange: parsed.projectDetails?.latestChange || 'Proposed new project structure from recent voice captures.',
         sourceNoteIds: Array.isArray(targetNoteIds) && targetNoteIds.length > 0 ? targetNoteIds : (parsed.projectDetails?.sourceNoteIds || []),
         uid,
         status: 'proposed', // The Gatekeeper Model: do NOT auto-create as active/draft!
