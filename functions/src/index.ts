@@ -152,7 +152,7 @@ Output ONLY raw JSON (no markdown blocks) matching this schema:
   "action": "append_to_existing",
   "targetProjectId": "${targetProjectId}",
   "projectDetails": {
-    "title": "An updated, concise title reflecting the current full scope of all notes in the project (update whenever relevant).",
+    "title": "An evolved, high-level project title. CRITICAL RULE: Do NOT leave old narrow titles untouched! If new notes broaden the overall scope (e.g. going from 2 station notes to 14 vacation notes), generalize and upgrade the title immediately!",
     "archetype": "${targetProj.archetype || 'Diary'}",
     "summary": "EXACTLY ONE short declarative sentence summarizing the overarching project essence in MAXIMUM 10 TO 12 WORDS (e.g. 'Familienurlaub in Stockholm mit Städtetrip und Ferienhaus am See.'). STRICT RULE: Under NO circumstances write bloated compound sentences!",
     "latestChange": "EXACTLY ONE short sentence explicitly stating what specific concrete topic, place, or insight was MOST RECENTLY added so the user instantly remembers where they left off (e.g. 'Zuletzt notiert: Café Panem als idealen Pausenort bewertet.'). STRICT RULE: Do NOT output vague statistics or generic administrative statements!",
@@ -188,13 +188,14 @@ CRITICAL RULES & THRESHOLDS:
 2. DIARY & CONTINUOUS LOGS: If an existing project represents a Diary, Journal, or continuing stream of thoughts, ALWAYS prioritize appending new notes to it over creating a new project. Do NOT duplicate Diaries!
 3. HIGH BAR FOR NEW PROJECTS: Only set action to "propose_new" if the note introduces a totally novel topic that would make zero sense inside ANY of the existing projects.
 4. NO REPETITIVE PER-NOTE SUMMARIES: DO NOT create granular, item-by-item summaries (like 'Station 1', 'Station 2') that duplicate the raw voice notes. Invest in high-level summaries and meta-analysis (timespan, places visited, key takeaways, interesting opportunities).
+5. DYNAMIC TITLE & SUMMARY EVOLUTION: Whenever appending to an existing project, you MUST critically check if the existing title has become too narrow or outdated (e.g., if a project initially titled 'Städtetrip Stockholm: Panem & Junibacken' expands to 14 notes including a holiday house and spa, you MUST actively upgrade the title to reflect the broader scope, such as 'Stockholm Städtetrip & Familienurlaub'). ALWAYS regenerate both the summary and latestChange bullets to precisely reflect the new state!
 
 Output ONLY raw JSON (no markdown blocks) with the following schema:
 {
   "action": "append_to_existing" | "propose_new" | "ignore",
   "targetProjectId": "Required ONLY if action is append_to_existing (must match an exact ProjectID above)",
   "projectDetails": {
-    "title": "A crisp, descriptive title reflecting the scope of all notes in the project (update equally when relevant).",
+    "title": "An evolved, high-level project title. CRITICAL RULE: Do NOT leave old narrow titles untouched! If new notes broaden the overall scope, generalize and upgrade the title immediately!",
     "archetype": "Diary | Chapters | Brainstorm",
     "summary": "EXACTLY ONE short declarative sentence summarizing the overarching essence across all notes in MAXIMUM 10 TO 12 WORDS. STRICT RULE: Under NO circumstances write bloated compound sentences!",
     "latestChange": "EXACTLY ONE short sentence explicitly stating what specific concrete topic, place, or insight was MOST RECENTLY added or why this project was formed so the user instantly remembers where they left off. STRICT RULE: Do NOT output vague statistics or generic administrative statements!",
@@ -264,10 +265,20 @@ Archetype Content Schemas for "projectDetails.content":
       const oldSourceIds = Array.isArray(existingData.sourceNoteIds) ? existingData.sourceNoteIds : [];
       const updatedSourceIds = Array.from(new Set([...oldSourceIds, ...targetNoteIds]));
       
+      const oldMeta = existingData.metaAnalysis || {};
+      const newMeta = newDetails.metaAnalysis || {};
+      const mergedMeta = {
+        ...oldMeta,
+        ...newMeta,
+        placesVisited: Array.from(new Set([...(Array.isArray(oldMeta.placesVisited) ? oldMeta.placesVisited : []), ...(Array.isArray(newMeta.placesVisited) ? newMeta.placesVisited : [])])),
+        keyTakeaways: Array.from(new Set([...(Array.isArray(newMeta.keyTakeaways) ? newMeta.keyTakeaways : []), ...(Array.isArray(oldMeta.keyTakeaways) ? oldMeta.keyTakeaways : [])])),
+        interestingOpportunities: Array.from(new Set([...(Array.isArray(newMeta.interestingOpportunities) ? newMeta.interestingOpportunities : []), ...(Array.isArray(oldMeta.interestingOpportunities) ? oldMeta.interestingOpportunities : [])]))
+      };
+      
       await ref.update({
         title: newDetails.title || existingData.title || 'Untitled Project',
         content: mergedContent,
-        metaAnalysis: newDetails.metaAnalysis || existingData.metaAnalysis || null,
+        metaAnalysis: mergedMeta,
         sourceNoteIds: updatedSourceIds,
         summary: newDetails.summary || existingData.summary || '',
         latestChange: newDetails.latestChange || 'Updated project with new voice captures.',

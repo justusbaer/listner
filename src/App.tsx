@@ -22,6 +22,7 @@ const refiningProjects = new Set<string>();
 const refineProjectMetaIfNeeded = async (p: any) => {
   if (!p.id || refiningProjects.has(p.id) || p.status === 'proposed') return;
   
+  const noteCount = (p.sourceNoteIds && Array.isArray(p.sourceNoteIds)) ? p.sourceNoteIds.length : 0;
   const isSummaryBloated = !p.summary || p.summary.length > 120 || p.summary.split(' ').length > 18 || p.summary.includes(' – wie ') || p.summary.includes('Neben exklusiven');
   const isLatestGeneric = !p.latestChange || p.latestChange.length > 130 || 
     p.latestChange.startsWith('Synthesized') || 
@@ -31,8 +32,9 @@ const refineProjectMetaIfNeeded = async (p: any) => {
     p.latestChange.startsWith('Project initialized') ||
     p.latestChange.startsWith('AI detected') ||
     p.latestChange.startsWith('Die Notizen');
+  const isTitleOutdated = (noteCount >= 5 && p.title && (p.title.includes(':') || p.title.includes('Panem') || p.title.includes('&') || p.title.length > 50));
 
-  if (!isSummaryBloated && !isLatestGeneric) return;
+  if (!isSummaryBloated && !isLatestGeneric && !isTitleOutdated) return;
   
   refiningProjects.add(p.id);
   try {
@@ -50,17 +52,19 @@ const refineProjectMetaIfNeeded = async (p: any) => {
     }
     
     const contextText = noteTexts.slice(-8).join('\n- ');
-    const prompt = `Analyze this user project titled "${p.title}" (Archetype: ${p.archetype || 'Project'}) and its associated note captures:
+    const prompt = `Analyze this user project titled "${p.title}" (Archetype: ${p.archetype || 'Project'}) and its associated note captures (${noteCount || noteTexts.length} total notes):
 - ${contextText || p.summary || p.title}
 
-The current summary is too wordy/bloated, or the latest update indicator is unhelpful/generic.
-Your task is to generate TWO EXTREMELY CRISP, RAZOR-SHARP SENTENCES in the primary language of the notes (e.g. German if the notes are in German, English if English):
+The current project title, summary, or latest change bullet needs to be refined and evolved to accurately match all note captures combined.
+Your task is to generate THREE EXTREMELY CRISP, RAZOR-SHARP STRINGS in the primary language of the notes (e.g. German if the notes are in German, English if English):
 
-1. "summary": EXACTLY ONE short declarative sentence summarizing the overall project topic in MAXIMUM 10 TO 12 WORDS (e.g. "Familienurlaub in Stockholm mit Städtetrip und Ferienhaus am See."). STRICT RULE: Do NOT write compound sentences, clauses, or long explanations! Keep it ultra-brief and punchy!
-2. "latestChange": EXACTLY ONE short sentence explaining what specific thought, place, or insight was MOST RECENTLY discussed or noted, so the user instantly remembers where they left off (e.g. "Zuletzt notiert: Café Panem als idealen Pausenort nach dem Museumsbesuch bewertet."). STRICT RULE: Do NOT output vague statistics like "Synthesized from X notes" or "Updated project"! Must state specific topic details from the newest captures!
+1. "title": An evolved, high-level project title. CRITICAL RULE: If the project started with a narrow title mentioning specific initial stations (e.g. "Städtetrip Stockholm: Panem & Junibacken") but now contains many notes covering a broader scope (e.g. holiday house, spa, general vacation), you MUST generalize and upgrade the title (e.g. "Stockholm Städtetrip & Familienurlaub")!
+2. "summary": EXACTLY ONE short declarative sentence summarizing the overall project topic in MAXIMUM 10 TO 12 WORDS (e.g. "Familienurlaub in Stockholm mit Städtetrip und Ferienhaus am See."). STRICT RULE: Do NOT write compound sentences, clauses, or long explanations! Keep it ultra-brief and punchy!
+3. "latestChange": EXACTLY ONE short sentence explaining what specific thought, place, or insight was MOST RECENTLY discussed or noted, so the user instantly remembers where they left off (e.g. "Zuletzt notiert: Empfehlung für Spa-Gelände und Tiergehege für Kinder erhalten."). STRICT RULE: Do NOT output vague statistics like "Synthesized from X notes" or "Updated project"! Must state specific topic details from the newest captures!
 
 Return ONLY raw JSON:
 {
+  "title": "...",
   "summary": "...",
   "latestChange": "..."
 }`;
@@ -70,13 +74,13 @@ Return ONLY raw JSON:
     const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/) || [null, text.replace(/```json\n?|\n?```/g, '').trim()];
     const parsed = JSON.parse(jsonMatch[1]!);
     
-    if (parsed.summary && parsed.latestChange && parsed.summary.length <= 130) {
-      await updateDoc(doc(db, 'projects', p.id), {
-        summary: parsed.summary,
-        latestChange: parsed.latestChange
-      });
-      p.summary = parsed.summary;
-      p.latestChange = parsed.latestChange;
+    const updateData: any = {};
+    if (parsed.title) { updateData.title = parsed.title; p.title = parsed.title; }
+    if (parsed.summary && parsed.summary.length <= 130) { updateData.summary = parsed.summary; p.summary = parsed.summary; }
+    if (parsed.latestChange) { updateData.latestChange = parsed.latestChange; p.latestChange = parsed.latestChange; }
+
+    if (Object.keys(updateData).length > 0) {
+      await updateDoc(doc(db, 'projects', p.id), updateData);
     }
   } catch (e) {
     console.warn("Could not auto-refine project meta:", e);
@@ -206,7 +210,7 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <span style={{ fontSize: '11px', fontWeight: 'bold', letterSpacing: '0.05em', padding: '4px 10px', borderRadius: '14px', backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', color: 'var(--color-text-secondary)', marginBottom: '8px', display: 'inline-block' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--color-text-secondary)', marginBottom: '4px', display: 'block' }}>
                       PROPOSAL • {p.archetype?.toUpperCase() || 'PROJECT'}
                     </span>
                     <Text type="body" style={{ fontWeight: 600, fontSize: '1.3rem', marginTop: '4px', display: 'block', color: 'var(--color-text-primary)' }}>{p.title}</Text>
@@ -304,11 +308,11 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     {p.archetype ? (
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '4px 12px', borderRadius: '14px', backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-subtle)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                         {p.archetype}
                       </span>
                     ) : (
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                         Project
                       </span>
                     )}
@@ -352,7 +356,7 @@ function InboxScreen({ user, onSelectProject, orchestratorState }: { user: User,
 // Archetype UI Templates
 // -----------------------------------------------------------------------------
 
-function SummaryCard({ summary, nextSteps, metaAnalysis }: { summary?: string, nextSteps?: string[], metaAnalysis?: any, project?: any, sourceNotes?: any[] }) {
+function SummaryCard({ summary, nextSteps, metaAnalysis }: { summary?: string, nextSteps?: string[], metaAnalysis?: any, project?: any }) {
   const keyTakeaways = metaAnalysis?.keyTakeaways;
   const interestingOpportunities = metaAnalysis?.interestingOpportunities;
   const totalInsights = (keyTakeaways?.length || 0) + (interestingOpportunities?.length || 0) + (nextSteps?.length || 0);
@@ -360,21 +364,21 @@ function SummaryCard({ summary, nextSteps, metaAnalysis }: { summary?: string, n
   if (!summary && totalInsights === 0) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '8px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px', marginBottom: '12px' }}>
       {summary && (
-        <Card style={{ padding: '24px', backgroundColor: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)', borderRadius: '16px' }}>
-          <Text type="label" color="secondary" style={{ marginBottom: '10px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem', fontWeight: 600 }}>Executive Summary</Text>
-          <Text type="body" style={{ fontSize: '1.08rem', lineHeight: 1.65, color: 'var(--color-text-primary)', display: 'block', fontWeight: 400 }}>{summary}</Text>
-        </Card>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <Text type="label" color="secondary" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: '0.75rem', fontWeight: 700 }}>Executive Summary</Text>
+          <Text type="body" style={{ fontSize: '1.12rem', lineHeight: 1.6, color: 'var(--color-text-primary)', display: 'block', fontWeight: 400 }}>{summary}</Text>
+        </div>
       )}
 
       {totalInsights > 0 && (
-        <details style={{ backgroundColor: 'var(--color-bg-subtle)', borderRadius: '16px', border: '1px solid var(--color-border-subtle)', overflow: 'hidden' }}>
-          <summary style={{ padding: '16px 20px', cursor: 'pointer', fontWeight: 600, color: 'var(--color-text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.95rem', listStyle: 'none', outline: 'none', userSelect: 'none' }}>
-            <span>Strategic RAG Insights & Action Items ({totalInsights})</span>
-            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Takeaways, Opportunities & Steps ▾</span>
+        <details style={{ borderTop: '1px solid var(--color-border-subtle)', borderBottom: '1px solid var(--color-border-subtle)', padding: '6px 0' }}>
+          <summary style={{ padding: '12px 0', cursor: 'pointer', fontWeight: 600, color: 'var(--color-text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1rem', listStyle: 'none', outline: 'none', userSelect: 'none' }}>
+            <span>Takeaways, Opportunities & Steps ({totalInsights})</span>
+            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>▾</span>
           </summary>
-          <div style={{ padding: '0 20px 22px 20px', display: 'flex', flexDirection: 'column', gap: '24px', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '20px' }}>
+          <div style={{ padding: '12px 0 16px 0', display: 'flex', flexDirection: 'column', gap: '24px', borderTop: '1px solid var(--color-border-subtle)', marginTop: '6px' }}>
             {keyTakeaways && keyTakeaways.length > 0 && (
               <div>
                 <Text type="label" color="secondary" style={{ marginBottom: '10px', display: 'block', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', fontWeight: 600 }}>
@@ -503,6 +507,13 @@ function ProjectDetailScreen({ project, onBack, orchestratorState }: { project: 
   const [sourceNotes, setSourceNotes] = useState<any[]>([]);
   const [showMeeting, setShowMeeting] = useState(false);
   const [status, setStatus] = useState(project.status || 'accepted');
+  const [isSourceExpanded, setIsSourceExpanded] = useState(false);
+  const [showAllPlaces, setShowAllPlaces] = useState(false);
+  
+  // Place verification modal state
+  const [selectedPlace, setSelectedPlace] = useState<string | null>(null);
+  const [editedPlaceQuery, setEditedPlaceQuery] = useState<string>('');
+  const [isSavingPlace, setIsSavingPlace] = useState(false);
 
   const acceptProject = async () => {
     try {
@@ -528,18 +539,44 @@ function ProjectDetailScreen({ project, onBack, orchestratorState }: { project: 
 
   useEffect(() => {
     const fetchNotes = async () => {
-      const notes = [];
-      const sourceIds = project.sourceNoteIds || [];
-      for (const id of sourceIds) {
-        try {
-          const docRef = doc(db, 'notes', id);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            notes.push({ id: docSnap.id, ...docSnap.data() });
+      try {
+        const currentUid = auth.currentUser?.uid || project.uid;
+        const noteMap = new Map<string, any>();
+
+        // 1. Fetch by explicit projectId query with mandatory uid filter
+        if (currentUid) {
+          const q = query(collection(db, 'notes'), where('uid', '==', currentUid), where('projectId', '==', project.id));
+          const qSnaps = await getDocs(q).catch(() => null);
+          if (qSnaps) {
+            qSnaps.docs.forEach(d => noteMap.set(d.id, { id: d.id, ...d.data() }));
           }
-        } catch (e) {}
+        }
+
+        // 2. Also fetch any bound sourceNoteIds not caught by query
+        const sourceIds = project.sourceNoteIds || [];
+        for (const id of sourceIds) {
+          if (!noteMap.has(id)) {
+            try {
+              const docRef = doc(db, 'notes', id);
+              const docSnap = await getDoc(docRef);
+              if (docSnap.exists() && (!currentUid || docSnap.data()?.uid === currentUid)) {
+                noteMap.set(id, { id: docSnap.id, ...docSnap.data() });
+              }
+            } catch (e) {}
+          }
+        }
+        
+        const notes = Array.from(noteMap.values());
+        // Sort chronologically (oldest to newest for timeline/timespan accuracy)
+        notes.sort((a, b) => {
+          const tA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+          const tB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+          return tA - tB;
+        });
+        setSourceNotes(notes);
+      } catch (err) {
+        console.warn("Could not fetch notes:", err);
       }
-      setSourceNotes(notes);
     };
     fetchNotes();
   }, [project]);
@@ -549,38 +586,186 @@ function ProjectDetailScreen({ project, onBack, orchestratorState }: { project: 
   }
 
   const metaAnalysis = project.metaAnalysis || project.content?.metaAnalysis;
-  const placesVisited = metaAnalysis?.placesVisited || [];
+  const placesVisited: string[] = metaAnalysis?.placesVisited || [];
+  const displayPlaces = showAllPlaces ? placesVisited : placesVisited.slice(0, 3);
   
-  let timespanStr = metaAnalysis?.timespan || '';
-  if (!timespanStr && sourceNotes && sourceNotes.length > 0) {
+  // Smart Place Query Cleaner for Maps & Best-Guess verification
+  const cleanPlaceForMaps = (rawPlace: string) => {
+    let cleaned = rawPlace
+      .replace(/\s*\([^)]*\)/g, ' ') // remove parentheses like (Supermarkt, Schweden) or (nahe Boo)
+      .replace(/\b(nahe|bei|near|in der Nähe von|Schweden-Aufenthalt)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned) cleaned = rawPlace.replace(/\s*\([^)]*\)/g, '').trim() || rawPlace;
+    return cleaned;
+  };
+
+  const handleOpenPlaceVerification = (place: string) => {
+    setSelectedPlace(place);
+    setEditedPlaceQuery(cleanPlaceForMaps(place));
+  };
+
+  const handleSaveVerifiedPlace = async () => {
+    if (!selectedPlace || !editedPlaceQuery.trim()) return;
+    setIsSavingPlace(true);
+    try {
+      const updatedPlaces = placesVisited.map(p => p === selectedPlace ? editedPlaceQuery.trim() : p);
+      const updatedMeta = { ...metaAnalysis, placesVisited: Array.from(new Set(updatedPlaces)) };
+      await updateDoc(doc(db, 'projects', project.id), {
+        metaAnalysis: updatedMeta,
+        updatedAt: serverTimestamp()
+      });
+      project.metaAnalysis = updatedMeta; // update local ref
+      setSelectedPlace(null);
+    } catch (e: any) {
+      alert("Could not update place name: " + e.message);
+    } finally {
+      setIsSavingPlace(false);
+    }
+  };
+  
+  // Dynamically calculate timespan from actual source note entries so additions immediately reflect
+  let timespanStr = '';
+  let topicSuffix = '';
+  if (metaAnalysis?.timespan && metaAnalysis.timespan.includes('·')) {
+    const parts = metaAnalysis.timespan.split('·');
+    if (parts.length > 1) topicSuffix = ' · ' + parts.slice(1).join('·').trim();
+  } else if (metaAnalysis?.timespan && !metaAnalysis.timespan.match(/^\d/)) {
+    topicSuffix = ' · ' + metaAnalysis.timespan;
+  }
+
+  if (sourceNotes && sourceNotes.length > 0) {
     const dates = sourceNotes
       .map(n => n.createdAt?.toDate ? n.createdAt.toDate() : (n.createdAt ? new Date(n.createdAt) : null))
       .filter((d): d is Date => d !== null && !isNaN(d.getTime()))
       .sort((a, b) => a.getTime() - b.getTime());
     if (dates.length === 1) {
       const d = dates[0];
-      timespanStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' · ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      timespanStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     } else if (dates.length > 1) {
       const d1 = dates[0];
       const d2 = dates[dates.length - 1];
-      const date1 = d1.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      const date1 = d1.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
       const time1 = d1.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-      const date2 = d2.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      const date2 = d2.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
       const time2 = d2.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
       if (date1 === date2) {
-        timespanStr = `${date1} · ${time1} – ${time2}`;
+        timespanStr = `${date1} ${time1} – ${time2}`;
       } else {
-        timespanStr = `${date1} (${time1}) – ${date2} (${time2})`;
+        timespanStr = `${date1} ${time1} – ${date2} ${time2}`;
       }
     }
+    if (timespanStr && topicSuffix) {
+      timespanStr += topicSuffix;
+    }
+  }
+  
+  // Fallback to static metaAnalysis or creation date if no notes
+  if (!timespanStr) {
+    timespanStr = metaAnalysis?.timespan || '';
   }
   if (!timespanStr && project?.createdAt?.toDate) {
     const d = project.createdAt.toDate();
-    timespanStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' · ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    timespanStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+      {/* Location Verification & Best-Guess Map Dialog */}
+      {selectedPlace && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(3px)', padding: '20px' }}>
+          <Card style={{ padding: '28px', width: '100%', maxWidth: '420px', backgroundColor: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)', borderRadius: '24px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.3)', position: 'relative', zIndex: 10001 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <Text type="body" style={{ fontWeight: 700, fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>Explore Location</Text>
+              <Button variant="ghost" label="✕" onClick={() => setSelectedPlace(null)} style={{ padding: '4px 10px', fontSize: '1.1rem', color: 'var(--color-text-secondary)' }} />
+            </div>
+            
+            <Text type="supporting" style={{ fontSize: '0.92rem', lineHeight: 1.5, color: 'var(--color-text-secondary)', marginBottom: '20px', display: 'block' }}>
+              We refined your voice note into an optimized Google Maps search. Adjust below if needed before opening:
+            </Text>
+
+            <div style={{ marginBottom: '24px' }}>
+              <Text type="label" style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-secondary)', marginBottom: '8px', fontWeight: 600 }}>Search Query</Text>
+              <input
+                type="text"
+                value={editedPlaceQuery}
+                onChange={e => setEditedPlaceQuery(e.target.value)}
+                placeholder="Location name..."
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  borderRadius: '14px',
+                  border: '1px solid var(--color-border-strong)',
+                  backgroundColor: 'var(--color-bg-subtle)',
+                  color: 'var(--color-text-primary)',
+                  fontSize: '1rem',
+                  outline: 'none',
+                  fontWeight: 600,
+                  boxSizing: 'border-box'
+                }}
+              />
+              {selectedPlace !== editedPlaceQuery && (
+                <div style={{ marginTop: '8px', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
+                  Original note: <span style={{ fontStyle: 'italic' }}>"{selectedPlace}"</span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(editedPlaceQuery || selectedPlace)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => {
+                  if (editedPlaceQuery !== selectedPlace) {
+                    handleSaveVerifiedPlace();
+                  } else {
+                    setSelectedPlace(null);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  width: '100%',
+                  padding: '15px',
+                  borderRadius: '14px',
+                  backgroundColor: 'var(--color-text-primary)',
+                  color: 'var(--color-bg-elevated)',
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                  textDecoration: 'none',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+                }}
+              >
+                <span>Open in Google Maps</span>
+                <span style={{ fontSize: '0.85rem' }}>↗</span>
+              </a>
+              
+              {editedPlaceQuery !== selectedPlace && (
+                <Button
+                  variant="ghost"
+                  label={isSavingPlace ? "Saving..." : "Save Clean Name to Project"}
+                  onClick={handleSaveVerifiedPlace}
+                  style={{ width: '100%', padding: '12px', borderRadius: '12px', fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-primary)', backgroundColor: 'var(--color-bg-subtle)' }}
+                />
+              )}
+              
+              <Button
+                variant="ghost"
+                label="Cancel"
+                onClick={() => setSelectedPlace(null)}
+                style={{ width: '100%', padding: '12px', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}
+              />
+            </div>
+          </Card>
+        </div>
+      )}
+
       <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--color-border-subtle)', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Button variant="ghost" label="← Back to Inbox" onClick={onBack} size="sm" style={{ paddingLeft: 0, fontWeight: 600 }} />
         <OrchestratorStatus state={orchestratorState} />
@@ -606,46 +791,72 @@ function ProjectDetailScreen({ project, onBack, orchestratorState }: { project: 
             {project.title}
           </Text>
 
-          {/* Compact Hero Meta-Row: Archetype, Deduplicated Timespan & Interactive Place Chips */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+          {/* Compact Hero Meta-Row: Archetype & Dynamically Updated Timespan */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
             {project.archetype && (
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '5px 12px', borderRadius: '16px', backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', color: 'var(--color-text-primary)' }}>
+              <span style={{ fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-text-primary)' }}>
                 {project.archetype}
               </span>
             )}
+            {project.archetype && timespanStr && <span>•</span>}
             {timespanStr && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', padding: '5px 12px', borderRadius: '16px', backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', fontSize: '0.82rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                <span>{timespanStr}</span>
-              </div>
+              <span>{timespanStr}</span>
             )}
-            {placesVisited && placesVisited.length > 0 && placesVisited.map((place: string, idx: number) => (
-              <a
-                key={idx}
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '5px 12px',
-                  borderRadius: '16px',
-                  backgroundColor: 'var(--color-bg-subtle)',
-                  border: '1px solid var(--color-border-subtle)',
-                  fontSize: '0.85rem',
-                  color: 'var(--color-text-primary)',
-                  fontWeight: 500,
-                  textDecoration: 'none',
-                  transition: 'all 0.2s ease',
-                  cursor: 'pointer'
-                }}
-                title={`Open "${place}" in Google Maps`}
-              >
-                <span>{place}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginLeft: '2px' }}>↗</span>
-              </a>
-            ))}
           </div>
+          
+          {/* Sleek Collapsible Places Bar (Solves Vertical Sprawl & Enables Interactive Verification) */}
+          {placesVisited && placesVisited.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginTop: '6px', fontSize: '0.92rem', lineHeight: '1.6' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: '2px' }}>Places:</span>
+              {displayPlaces.map((place: string, idx: number) => (
+                <span key={idx} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <button
+                    onClick={() => handleOpenPlaceVerification(place)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: 0,
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '0.92rem',
+                      color: 'var(--color-text-primary)',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                      textUnderlineOffset: '4px',
+                      textDecorationColor: 'var(--color-border-strong)',
+                      outline: 'none'
+                    }}
+                    title={`Verify & Explore "${place}"`}
+                  >
+                    <span>{place}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>↗</span>
+                  </button>
+                  {idx < displayPlaces.length - 1 && <span style={{ color: 'var(--color-text-secondary)', marginLeft: '12px' }}>•</span>}
+                </span>
+              ))}
+              {placesVisited.length > 3 && (
+                <button
+                  onClick={() => setShowAllPlaces(!showAllPlaces)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: 0,
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '0.85rem',
+                    color: 'var(--color-text-secondary)',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    marginLeft: '4px'
+                  }}
+                >
+                  {showAllPlaces ? '(Show less ▴)' : `(+${placesVisited.length - 3} more ▾)`}
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Promoted Primary Interaction: Consult Expert */}
@@ -658,8 +869,12 @@ function ProjectDetailScreen({ project, onBack, orchestratorState }: { project: 
           />
         </div>
 
-        {/* Universal Executive Summary & Strategic RAG Insights block */}
-        <SummaryCard summary={project.summary} nextSteps={project.nextSteps} metaAnalysis={metaAnalysis} project={project} sourceNotes={sourceNotes} />
+        <SummaryCard 
+          summary={project.summary} 
+          nextSteps={project.nextSteps} 
+          metaAnalysis={metaAnalysis} 
+          project={project} 
+        />
 
         {/* Dynamic content rendering based on archetype or legacy draft */}
         <div style={{ marginTop: '20px' }}>
@@ -673,27 +888,46 @@ function ProjectDetailScreen({ project, onBack, orchestratorState }: { project: 
         </div>
       </div>
 
+      {/* Source Material Inspector */}
       {sourceNotes.length > 0 && (
-        <details style={{ marginTop: '12px', backgroundColor: 'var(--color-bg-subtle)', borderRadius: '16px', border: '1px solid var(--color-border-subtle)', overflow: 'hidden' }}>
-          <summary style={{ padding: '16px 20px', cursor: 'pointer', fontWeight: 600, color: 'var(--color-text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.95rem', listStyle: 'none', outline: 'none', userSelect: 'none' }}>
-            <span>Source Notes & Memory Recordings ({sourceNotes.length})</span>
-            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>View ▾</span>
-          </summary>
-          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid var(--color-border-subtle)' }}>
-            {sourceNotes.map(note => (
-              <Card key={note.id} style={{ padding: '16px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: '12px', border: '1px solid var(--color-border-subtle)' }}>
-                <Text type="supporting" color="secondary" style={{ textTransform: 'uppercase', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600 }}>
-                  <span>{note.category}</span>
-                  <span style={{ textTransform: 'none', fontWeight: 500 }}>
-                    {note.createdAt?.toDate ? note.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : ''}
-                    {note.locationString ? ` • ${note.locationString}` : ''}
-                  </span>
-                </Text>
-                <Text type="body" style={{ lineHeight: 1.55, fontSize: '0.95rem', color: 'var(--color-text-primary)' }}>{note.text}</Text>
-              </Card>
-            ))}
+        <div id="rag-audit-trail" style={{ marginTop: '24px', borderTop: '1px solid var(--color-border-subtle)', borderBottom: '1px solid var(--color-border-subtle)', padding: '6px 0' }}>
+          <div 
+            onClick={() => setIsSourceExpanded(!isSourceExpanded)}
+            style={{ padding: '12px 0', cursor: 'pointer', fontWeight: 600, color: 'var(--color-text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1rem', userSelect: 'none', transition: 'all 0.2s ease' }}
+          >
+            <span>Inspect Trail ({sourceNotes.length})</span>
+            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>{isSourceExpanded ? '▴' : '▾'}</span>
           </div>
-        </details>
+          
+          {isSourceExpanded && (
+            <div style={{ padding: '16px 0 20px 0', display: 'flex', flexDirection: 'column', gap: '20px', borderTop: '1px solid var(--color-border-subtle)', marginTop: '6px' }}>
+              <Text type="supporting" color="secondary" style={{ fontSize: '0.9rem', lineHeight: 1.5, display: 'block', marginBottom: '4px' }}>
+                Original voice recordings and notes used to generate this project's summary and action items:
+              </Text>
+              {sourceNotes.map((note, index) => (
+                <div key={note.id || index} style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: index < sourceNotes.length - 1 ? '20px' : '4px', borderBottom: index < sourceNotes.length - 1 ? '1px dashed var(--color-border-subtle)' : 'none' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
+                      <span style={{ fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-text-primary)' }}>
+                        {note.category || 'NOTE'}
+                      </span>
+                      <span>•</span>
+                      <span style={{ color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                        {note.createdAt?.toDate ? note.createdAt.toDate().toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                      </span>
+                    </div>
+                    {note.locationString && (
+                      <span style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+                        {note.locationString}
+                      </span>
+                    )}
+                  </div>
+                  <Text type="body" style={{ lineHeight: 1.6, fontSize: '0.98rem', color: 'var(--color-text-primary)', display: 'block', whiteSpace: 'pre-wrap', margin: 0 }}>{note.text}</Text>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--color-border-subtle)', display: 'flex', justifyContent: 'center' }}>
@@ -741,7 +975,13 @@ function MeetingScreen({ project, onBack }: { project: any, onBack: () => void }
   useEffect(() => {
     chatSession.current = model.startChat({
       history: [
-        { role: 'user', parts: [{ text: `We are having a meeting about my project titled "${project.title}". Archetype: ${project.archetype}. Current content: ${JSON.stringify(project.content || project.draft)}\n\nAct as a helpful project expert and consultant. Let's brainstorm and discuss the project.` }] },
+        { role: 'user', parts: [{ text: `We are having a voice-and-text consultation about my project titled "${project.title}". Archetype: ${project.archetype || 'Project'}. Current content: ${JSON.stringify(project.content || project.draft || project.summary)}
+
+You are an expert project consultant and brainstorming partner.
+CRITICAL COMMUNICATION AND FORMATTING RULES:
+1. EXTREMELY BRIEF & TO THE POINT: Keep all responses concise, direct, and crisp (typically 1 to 3 short sentences). Never generate verbose lectures or unrequested lengthy lists unless the user explicitly asks for a long or detailed explanation.
+2. STRICT PLAIN TEXT ONLY (ABSOLUTELY NO MARKDOWN): You MUST format your replies purely in plain text. Do NOT use markdown syntax under any circumstances! Never use asterisks for bolding (**bold** or *italics*), do NOT use bullet symbols or markdown headers (# or *). Rely purely on natural conversational phrasing and simple punctuation.
+3. NATURAL SPEAKING TONE: Because answers may be read aloud via TTS speech, sound natural, conversational, and directly helpful without formatting artifacts.` }] },
         { role: 'model', parts: [{ text: 'Hello! I am ready to discuss your project. What would you like to focus on today?' }] }
       ]
     });
@@ -756,7 +996,13 @@ function MeetingScreen({ project, onBack }: { project: any, onBack: () => void }
 
     try {
       const result = await chatSession.current.sendMessage(msgText);
-      const replyText = result.response.text();
+      const rawText = result.response.text();
+      const replyText = rawText
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/\*([^*]+)\*/g, '$1')
+        .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')
+        .replace(/#{1,6}\s/g, '')
+        .trim();
       setChatLog(prev => [...prev, { role: 'model', text: replyText }]);
     } catch (e) {
       console.error(e);
@@ -919,17 +1165,76 @@ function MeetingScreen({ project, onBack }: { project: any, onBack: () => void }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', backgroundColor: 'var(--color-bg-base)' }}>
       {proposedChanges ? (
-        <div style={{ padding: '24px', flex: 1, overflowY: 'auto' }}>
-          <Text type="display-3" style={{ marginBottom: '16px' }}>Meeting Summary</Text>
-          <Text type="body" style={{ marginBottom: '24px' }}>The expert has proposed the following updates based on your conversation.</Text>
-          <Card style={{ padding: '16px', backgroundColor: 'var(--color-bg-elevated)', marginBottom: '24px' }}>
-            <pre style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word', fontSize: '12px' }}>
-              {JSON.stringify(proposedChanges, null, 2)}
-            </pre>
-          </Card>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <Button variant="primary" label="Apply Changes" onClick={applyChanges} />
-            <Button variant="destructive" label="Discard Changes" onClick={discardChanges} />
+        <div style={{ padding: '28px 24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '28px', maxWidth: '680px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <Text type="display-3" style={{ color: 'var(--color-text-primary)', display: 'block', margin: 0 }}>Meeting Insights & Updates</Text>
+            <Text type="body" color="secondary" style={{ fontSize: '1rem', lineHeight: 1.5, display: 'block', margin: 0 }}>
+              The consultant has synthesized your discussion and proposed the following structure for your project.
+            </Text>
+          </div>
+
+          {proposedChanges.title && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)' }}>
+                Proposed Project Title
+              </span>
+              <Text type="body" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--color-text-primary)', lineHeight: 1.3, display: 'block', margin: 0 }}>
+                {proposedChanges.title}
+              </Text>
+            </div>
+          )}
+
+          {proposedChanges.summary && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '20px' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)' }}>
+                Updated Executive Summary
+              </span>
+              <Text type="body" style={{ fontSize: '1.1rem', color: 'var(--color-text-primary)', lineHeight: 1.5, display: 'block', margin: 0 }}>
+                {proposedChanges.summary}
+              </Text>
+            </div>
+          )}
+
+          {proposedChanges.latestChange && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '20px' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)' }}>
+                Where You Left Off
+              </span>
+              <Text type="body" style={{ fontSize: '1rem', color: 'var(--color-text-primary)', lineHeight: 1.5, display: 'block', margin: 0 }}>
+                {proposedChanges.latestChange}
+              </Text>
+            </div>
+          )}
+
+          {proposedChanges.content && (proposedChanges.content.narrativeOverview || proposedChanges.content.thesis || typeof proposedChanges.content === 'string') && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '20px' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)' }}>
+                Refreshed Content Preview
+              </span>
+              <Text type="body" style={{ fontSize: '1rem', color: 'var(--color-text-primary)', lineHeight: 1.6, whiteSpace: 'pre-wrap', display: 'block', margin: 0 }}>
+                {typeof proposedChanges.content === 'string' 
+                  ? proposedChanges.content 
+                  : (proposedChanges.content.narrativeOverview || proposedChanges.content.thesis || '')}
+              </Text>
+            </div>
+          )}
+
+          {proposedChanges.content && Array.isArray(proposedChanges.content.keyTakeaways) && proposedChanges.content.keyTakeaways.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '20px' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)' }}>
+                Key Takeaways
+              </span>
+              <ul style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', color: 'var(--color-text-primary)' }}>
+                {proposedChanges.content.keyTakeaways.map((t: any, i: number) => (
+                  <li key={i} style={{ fontSize: '0.98rem', lineHeight: 1.5 }}>{typeof t === 'string' ? t : t.point || JSON.stringify(t)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '14px', marginTop: '12px', paddingTop: '24px', borderTop: '1px solid var(--color-border-subtle)' }}>
+            <Button variant="primary" label="Update Project" onClick={applyChanges} />
+            <Button variant="ghost" label="Discard Proposals" onClick={discardChanges} style={{ color: 'var(--color-text-secondary)' }} />
           </div>
         </div>
       ) : (
@@ -946,13 +1251,14 @@ function MeetingScreen({ project, onBack }: { project: any, onBack: () => void }
                   {c.role === 'user' ? 'You' : 'Project Expert'}
                 </Text>
                 <div style={{ 
-                  padding: '12px', 
-                  backgroundColor: c.role === 'user' ? 'var(--color-primary)' : 'var(--color-bg-elevated)', 
-                  borderRadius: '12px',
-                  border: c.role === 'user' ? 'none' : '1px solid var(--color-border-subtle)',
-                  maxWidth: '85%' 
+                  padding: '14px 18px', 
+                  backgroundColor: c.role === 'user' ? 'var(--color-bg-user-bubble, #262626)' : 'var(--color-bg-elevated, #ffffff)', 
+                  borderRadius: '16px',
+                  border: c.role === 'user' ? '1px solid rgba(128,128,128,0.2)' : '1px solid var(--color-border-subtle)',
+                  maxWidth: '85%',
+                  boxShadow: '0 2px 6px rgba(0, 0, 0, 0.05)'
                 }}>
-                  <Text type="body" style={{ color: c.role === 'user' ? 'white' : 'inherit' }}>{c.text}</Text>
+                  <Text type="body" style={{ color: c.role === 'user' ? 'var(--color-text-user-bubble, #ffffff)' : 'inherit', margin: 0, fontSize: '0.98rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.text}</Text>
                 </div>
                 {c.role === 'model' && (
                   <Button variant="ghost" label="Play Audio" size="sm" onClick={() => playAudio(c.text)} style={{ marginTop: '4px' }} />
@@ -1069,7 +1375,7 @@ function OrchestratorStatus({ state }: { state: string }) {
   }
 
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', color, fontWeight: 600, padding: '5px 12px', borderRadius: '18px', backgroundColor: 'var(--color-bg-subtle, #f8fafc)', border: '1px solid var(--color-border-subtle, rgba(0,0,0,0.06))', transition: 'all 0.3s ease' }}>
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', color, fontWeight: 600, padding: '5px 12px', borderRadius: '18px', backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', transition: 'all 0.3s ease' }}>
       <div className={dotClass} />
       <span>{text}</span>
     </div>
