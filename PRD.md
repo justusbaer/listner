@@ -59,3 +59,20 @@ In alignment with advanced product development standards, Listner is continually
 - **Frontend Stack:** React 19 + TypeScript + Vite + `@astryxdesign/ui` / `@astryxdesign/theme-neutral`.
 - **Backend Stack:** Firebase Authentication, Cloud Firestore, Cloud Storage, and Cloud Functions (Node.js/TS).
 - **Design Token Governance:** All UI components consume standard Astryx `--color-*`, `--spacing-*`, and `--radius-*` CSS variables, guaranteeing zero hardcoded hex colors and seamless theme switching.
+
+---
+
+## 5. Changelog & Recent Updates
+
+### [v2.0.0] - 2026-07-27 (Astryx Editorial UI, Dark Mode & Conversational Intelligence)
+- **Editorial Meeting Summary Transformation:** Replaced raw JSON code previews in post-consultation screens with a structured, magazine-quality editorial interface ("Meeting Insights & Updates"). Fixed line breaking and header stacking with vertical flex layouts and crisp action controls ("Update Project" vs "Discard Proposals").
+- **Dark & Light Mode Chat Contrast Fix:** Resolved unreadable user message bubble backgrounds during expert meetings by creating responsive CSS custom tokens (`--color-bg-user-bubble` & `--color-text-user-bubble`) in `src/index.css` that dynamically invert across theme modes.
+- **Crisper, Plain-Text Expert Consultations:** Updated system prompt architecture for the AI Project Consultant to enforce brief, conversational replies in clean plain text, stripping out excessive markdown formatting and lengthy text walls.
+- **Human-Centric Copy & RAG Transparency:** Replaced intimidating technical terms ("RAG GROUNDING", "Strategic RAG insights", "RAG audit trail") with approachable headings ("Take aways, insights & opportunities", "Inspect trail"). Maintained seamless navigation between executive synthesis and raw recorded source notes.
+- **Zero-Emoji & Pill-Box Clutter Reduction:** Removed informal emojis across UI and AI outputs. Replaced bulky pill containers on location lists and bullet items with clean, edge-to-edge text lists, maximizing vertical screen real estate.
+
+### [v1.9.0] - 2026-07-26 (Orchestrator Resilience & Frontend Self-Healing)
+- **Firestore Security Rule Compliance:** Updated frontend self-healing note queries with explicit User ID (`uid`) indexing to conform to strict Firestore database security policies.
+- **Fault-Tolerant Note Binding:** Hardened Cloud Functions Orchestrator against deleted notes and enforced authoritative note ID validation during automated project formation.
+- **Precision Summaries:** Refined automated project summaries to deliver punchy, 10-12 word synopses accompanied by concrete descriptions of recent activity in "Where You Left Off".
+- **Orchestrator Status Badging:** Introduced clean status indicators across capture and project views, informing users when the AI consultant is actively synthesizing newly captured notes in the background.
